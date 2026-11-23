@@ -309,3 +309,30 @@ fn identical_task_keys_in_two_workflows_stay_isolated() {
         "the second workflow's run must not take over the first's record"
     );
 }
+
+#[test]
+fn an_authoritative_completion_clears_a_final_frame_abort() {
+    // Thread 351: a halted final frame — an `ignoreErrors` or rescued
+    // failure — sets the abort, but the unfiltered Done that ends the
+    // session is the controller's authoritative verdict that the plan
+    // ran to its end. The abort must not survive it, or stale managed
+    // declarations linger past a complete session.
+    let dir = Scratch::new("completed-abort");
+    let file = dir.file("target", b"stable");
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow");
+    record_file(&mut ledger, "later", &file);
+    ledger.flush();
+
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow");
+    ledger.encounter("earlier");
+    ledger.abort_plan();
+    ledger.complete_plan();
+    ledger.flush();
+
+    assert!(
+        Ledger::load(&dir.0).cached_ok("later").is_none(),
+        "an authoritative completion clears the frame-level abort and prunes"
+    );
+}

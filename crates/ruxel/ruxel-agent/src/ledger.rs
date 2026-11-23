@@ -294,10 +294,11 @@ impl Ledger {
         self.aborted = false;
     }
 
-    /// The session's plans ran to their end: the plan is complete, and
-    /// a complete plan may expire the records it never encountered.
+    /// The session ran to its end: expire unencountered records and
+    /// clear a frame-level abort — completion is authoritative.
     pub(crate) fn complete_plan(&mut self) {
         self.complete = true;
+        self.aborted = false;
     }
 
     /// A new plan begins: the previous plan's verdict on what this
