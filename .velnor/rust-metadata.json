@@ -457,6 +457,16 @@
               "doctest": false,
               "source": "crates/ruxel-config/tests/workflow_systemd_timer_delay.rs",
               "requires_features": false
+            },
+            {
+              "name": "workflow_track_a",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-config/tests/workflow_track_a.rs",
+              "requires_features": false
             }
           ]
         },
