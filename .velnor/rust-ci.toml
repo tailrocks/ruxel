@@ -221,3 +221,15 @@ timeout_minutes = 20
 [[inputs]]
 glob = "crates/ruxel/tests/fixtures/local_exit_agent.rs"
 packages = ["ruxel"]
+
+# Process-group cleanup tests spawn real shells and process trees; under
+# the consolidated archive job's load they time out spuriously. Their own
+# hosted job keeps them in the low-load environment they had as
+# standalone tool jobs before the flat workspace merge.
+[[test_groups]]
+name = "process"
+root = "."
+runner = "ubuntu-26.04"
+hosted = true
+needs = ["cargo"]
+filter = "package(ruxel-acceptance-isolation) or package(ruxel-acceptance-runtime) and test(~process::tests::descendants) or package(ruxel-acceptance-runtime) and test(~completed_cli_does_not_leave_descendants_running)"

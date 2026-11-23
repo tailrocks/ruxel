@@ -66,7 +66,7 @@ fn descendants_cleaned_on_every_outcome() -> Result<()> {
         if name == "timeout" {
             assert!(result.is_err());
         } else {
-            assert!(result.is_ok());
+            assert!(result.is_ok(), "{name} run failed: {result:?}");
         }
         thread::sleep(Duration::from_millis(500));
         assert!(!marker.exists(), "{name} descendant survived cleanup");

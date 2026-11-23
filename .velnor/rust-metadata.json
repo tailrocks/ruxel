@@ -219,16 +219,6 @@
               "requires_features": false
             },
             {
-              "name": "check_deny_inputs",
-              "kinds": [
-                "bin"
-              ],
-              "tests": true,
-              "doctest": false,
-              "source": "crates/ruxel-config/src/bin/check_deny_inputs.rs",
-              "requires_features": false
-            },
-            {
               "name": "core_sysctl_file",
               "kinds": [
                 "test"
