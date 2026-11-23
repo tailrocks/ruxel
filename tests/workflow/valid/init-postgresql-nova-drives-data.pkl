@@ -1,0 +1,43 @@
+// The nova disk play in the catalogue language, with the playbook's own
+// names: the packages the storage steps need (`lvm2`, `xfsprogs`) are
+// composed as ordinary package steps, the three by-id disks are resolved
+// by a readlink capture, and the volume group, the logical volume of
+// `+100%FREE` and the XFS filesystem follow in that order. The group is
+// created unforced and never extended; the filesystem is formatted once.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+local disk1 = "/dev/disk/by-id/nvme-SAMSUNG_MZQL215THBLA-00A07_S6VANN0X516525_1"
+local disk2 = "/dev/disk/by-id/nvme-SAMSUNG_MZQL215THBLA-00A07_S6VANN0X516971_1"
+local disk3 = "/dev/disk/by-id/nvme-KIOXIA_KCD8XRUG15T3_54Q0A0A3TMAJ_1"
+
+local resolve = new Capture {
+  title = "Resolve the nova data disks"
+  bash = "readlink -e \(disk1) \(disk2) \(disk3)"
+}
+
+stages { new Stage { title = "Nova drives"; hosts = inventory.workers; steps {
+  new debian.AptPackages {
+    title = "Install the storage tools"
+    names { "lvm2"; "xfsprogs" }
+  }
+  resolve
+  new storage.VolumeGroup {
+    title = "Create the nova data volume group"
+    vg = "data"
+    devices { disk1; disk2; disk3 }
+  }
+  new storage.LogicalVolume {
+    title = "Create the nova data logical volume"
+    vg = "data"
+    lv = "data"
+  }
+  new storage.Filesystem {
+    title = "Format the nova data volume"
+    dev = "/dev/data/data"
+  }
+} } }
+
+name = "valid/init-postgresql-nova-drives-data.pkl"

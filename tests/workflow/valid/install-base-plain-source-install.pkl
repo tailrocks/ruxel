@@ -1,0 +1,36 @@
+// The install-base plain-source shape: a source the play downloads
+// outside the repository step — the keyring file a shell script installs,
+// the source a plain file — refreshes the index through an ordinary
+// index step ordered before the install, the way the holla handler flush
+// becomes an ordered step. The install stays on the newest published
+// release.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local key = new Script {
+  title = "Install the holla apt signing key"
+  bash = """
+    install -m 0755 -d /etc/apt/keyrings
+    if [ ! -f /etc/apt/keyrings/holla.gpg ]; then
+      curl -fsSL https://holla.example.test/holla.gpg | tee /etc/apt/keyrings/holla.gpg > /dev/null
+      echo "installed"
+    else
+      echo "exists"
+    fi
+    """
+  changes = new UnlessOutput { stdoutContains = "exists" }
+}
+
+stages { new Stage { title = "Holla"; hosts = inventory.workers; steps {
+  key
+  new File {
+    path = "/etc/apt/sources.list.d/holla.list"
+    content = "deb [signed-by=/etc/apt/keyrings/holla.gpg] https://holla.example.test stable main\n"
+    mode = "0644"
+  }
+  new debian.AptPackageIndex { title = "Refresh the index for holla" }
+  new debian.AptPackages { names { "holla" }; latest = true }
+} } }
+
+name = "valid/install-base-plain-source-install.pkl"

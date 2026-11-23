@@ -1,0 +1,25 @@
+// The install-base terminfo fallback: the catalogue has no
+// controller-side read, so the host derives the xterm-ghostty entry from
+// its own xterm-256color entry when the entry is missing, compiles it,
+// and removes the source. The guard makes a second apply a no-change,
+// and a host with neither entry fails the script instead of silently
+// keeping a missing terminal.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "Terminfo"; hosts = inventory.workers; steps {
+  new Script {
+    title = "Compile the xterm-ghostty terminfo entry"
+    bash = """
+      if infocmp xterm-ghostty >/dev/null 2>&1; then
+        exit 0
+      fi
+      infocmp -x xterm-256color | awk 'NR==1 { sub(/^xterm-256color\\|/, "xterm-ghostty|"); } { print }' > /tmp/xterm-ghostty.terminfo
+      tic -x /tmp/xterm-ghostty.terminfo
+      rm -f /tmp/xterm-ghostty.terminfo
+      """
+    creates = "/usr/share/terminfo/x/xterm-ghostty"
+  }
+} } }
+
+name = "valid/install-base-terminfo-fallback.pkl"

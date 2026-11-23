@@ -1,0 +1,26 @@
+// The install-base repository shape: a signed repository refreshes the
+// index through an ordinary index step ordered after it. No install
+// follows here: an install that plans against the candidates a
+// workflow-written repository would only publish at apply time waits on
+// the apt track, so the repository stage of the workflow holds the
+// repository and the index only.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n"
+local mise = new debian.AptRepository {
+  name = "mise"
+  url = "https://mise.example.test/deb"
+  suite = "stable"
+  components { "main" }
+  architectures { "amd64" }
+  signingKey = key
+}
+
+stages { new Stage { title = "Repositories"; hosts = inventory.workers; steps {
+  mise
+  new debian.AptPackageIndex { title = "Refresh the index for mise" }
+} } }
+
+name = "valid/install-base-repository-index.pkl"

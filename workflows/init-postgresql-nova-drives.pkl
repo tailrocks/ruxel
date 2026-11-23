@@ -1,0 +1,59 @@
+// Nova data drives: the Ruxel port of the ChainArgos
+// `init-postgresql-nova-drives.yml` Ansible playbook.
+//
+// The three by-id paths below are the play's inputs: change them for
+// other hardware. The stage resolves them to canonical device paths
+// with a readlink capture before the volume group claims them, the
+// group is created unforced and never extended (a disk that already
+// carries a signature fails instead of being taken over), the logical
+// volume takes the whole free space, and XFS is formatted once: a
+// device that already carries another signature is refused, never
+// overwritten.
+//
+// Format happens here; the mount happens in `setup-postgresql-nova.pkl`.
+// A re-run of this workflow must succeed whether or not the volume is
+// mounted there by then, which the disposable-host proof checks with
+// real block devices.
+//
+// SSH as root throughout: `Host.user` defaults to `root`, and no step
+// names another account (see `docs/OPERATOR-SETUP.md`).
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Storage.pkl" as storage
+
+// The play's inputs, not hardcoded serials: the stage resolves and
+// asserts them, and the volume group claims exactly this set.
+local disk1 = "/dev/disk/by-id/nvme-SAMSUNG_MZQL215THBLA-00A07_S6VANN0X516525_1"
+local disk2 = "/dev/disk/by-id/nvme-SAMSUNG_MZQL215THBLA-00A07_S6VANN0X516971_1"
+local disk3 = "/dev/disk/by-id/nvme-KIOXIA_KCD8XRUG15T3_54Q0A0A3TMAJ_1"
+
+local nova = new Host { name = "postgresql-nova"; address = "192.0.2.10" }
+
+local resolve = new Capture {
+  title = "Resolve the nova data disks"
+  bash = "readlink -e \(disk1) \(disk2) \(disk3)"
+}
+
+stages { new Stage { title = "Nova drives"; hosts = new Listing { nova }; steps {
+  new debian.AptPackages {
+    title = "Install the storage tools"
+    names { "lvm2"; "xfsprogs" }
+  }
+  resolve
+  new storage.VolumeGroup {
+    title = "Create the nova data volume group"
+    vg = "data"
+    devices { disk1; disk2; disk3 }
+  }
+  new storage.LogicalVolume {
+    title = "Create the nova data logical volume"
+    vg = "data"
+    lv = "data"
+  }
+  new storage.Filesystem {
+    title = "Format the nova data volume"
+    dev = "/dev/data/data"
+  }
+} } }
+
+name = "init-postgresql-nova-drives"

@@ -1,0 +1,200 @@
+// Base setup for each new server: the Ruxel port of the ChainArgos
+// `install-base.yml` Ansible playbook.
+//
+// SSH as root throughout: `Host.user` defaults to `root`, and no step
+// names another account (see `docs/OPERATOR-SETUP.md`). Secrets are
+// referenced, never inlined; this play carries none.
+//
+// Where the playbook needs a catalogue step that has not landed, the step
+// stands here commented out with the BLOCKED note naming what it waits
+// on. The commented steps are the install half of every workflow-written
+// repository: the lowering refuses an install that plans against
+// candidates a workflow-written repository would only publish at apply
+// time, in the writing stage and in every later one on the host. The
+// Nushell and holla sources below are plain files, not repository steps,
+// so their installs stay active; the mise install waits on that apt-track
+// design like the PostgreSQL installs in `setup-postgresql-nova.pkl` do.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Linux.pkl" as linux
+
+// The machine being set up. The address stands in for the real
+// inventory: the proof harness replaces it with its disposable host the
+// way the fixture matrix does, and the operator inventories the real
+// machine.
+local base = new Host { name = "base"; address = "192.0.2.9" }
+
+stages {
+  new Stage { title = "Base system"; hosts = new Listing { base }; steps {
+  new linux.Timezone { name = "UTC" }
+  new debian.AptPackageIndex {}
+  new debian.AptPackages {
+    names {
+      "gpg"
+      "sudo"
+      "wget"
+      "curl"
+      "zsh"
+      "git"
+      "git-lfs"
+      "unzip"
+      "tmux"
+      "iotop"
+      "bat"
+      "ncurses-term"
+      "build-essential"
+      "pkg-config"
+      "libssl-dev"
+    }
+  }
+  // The playbook reads the entry from the control host when the target
+  // lacks it, and derives it from xterm-256color when the controller
+  // lacks it too. The catalogue has no controller-side read yet, so the
+  // host derives the fallback itself: when the entry already exists the
+  // script exits, otherwise it writes the fallback source, compiles it,
+  // and removes the source. The guard makes a second apply a no-change.
+  new Script {
+    title = "Compile the xterm-ghostty terminfo entry"
+    bash = """
+      if infocmp xterm-ghostty >/dev/null 2>&1; then
+        exit 0
+      fi
+      infocmp -x xterm-256color | awk 'NR==1 { sub(/^xterm-256color\\|/, "xterm-ghostty|"); } { print }' > /tmp/xterm-ghostty.terminfo
+      tic -x /tmp/xterm-ghostty.terminfo
+      rm -f /tmp/xterm-ghostty.terminfo
+      """
+    creates = "/usr/share/terminfo/x/xterm-ghostty"
+  }
+  // `git lfs install` only writes the filters when they are missing, so
+  // it never reports a change: a first apply under-reports the one-time
+  // setup instead of reporting a change on every apply.
+  new Command { title = "Initialize Git LFS"; run { "git"; "lfs"; "install" }; changes = "never" }
+  new Symlink { path = "/usr/local/bin/bat"; target = "/usr/bin/batcat" }
+  } }
+  new Stage { title = "Shell"; hosts = new Listing { base }; steps {
+  // The unattended installer writes /root/.oh-my-zsh once; the guard
+  // skips it once the directory is there, so a second apply does not
+  // reinstall.
+  new Script {
+    title = "Install Oh My Zsh"
+    bash = "sh -c \"$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended\n"
+    creates = "/root/.oh-my-zsh"
+  }
+  // BLOCKED on Track A: the playbook tracks zsh-autosuggestions at
+  // `master` with host-key acceptance, and workflow git pins an HTTPS
+  // commit. The tracking form and the SSH host-key acceptance land with
+  // that track.
+  // new linux.GitCheckout {
+  //   repository = "git@github.com:zsh-users/zsh-autosuggestions.git"
+  //   path = "/root/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+  //   branch = "master"
+  // }
+  // /bin/zsh comes from the base package set above, which no step
+  // manages as a file: the shell is the host's own, so no provider step
+  // is needed.
+  new linux.User { user = "root"; shell = "/bin/zsh" }
+  // The playbook downloads the install script and pipes it to sh on
+  // stdin; the catalogue has no download step, so one shell step does
+  // both. The guard makes a second apply a no-change.
+  new Script {
+    title = "Install Starship"
+    bash = "curl -fsSL https://starship.rs/install.sh | sh -s -- -y\n"
+    creates = "/usr/local/bin/starship"
+  }
+  } }
+  // The account above owns the home, so its files land in a later stage:
+  // a stage declares one state for each thing it manages.
+  new Stage { title = "Shell config"; hosts = new Listing { base }; steps {
+  new File {
+    path = "/root/.zshrc"
+    content = read("zshrc").text
+    mode = "0644"
+    owner = "root"
+    group = "root"
+  }
+  } }
+  new Stage { title = "Nushell"; hosts = new Listing { base }; steps {
+  // The playbook stores the key outside the signed-by keyring, so the
+  // source is a plain file and the key a download: neither is a
+  // repository step, so the index and the install below are ordinary
+  // ordered steps.
+  new Command {
+    title = "Download the Nushell GPG key"
+    run { "curl"; "-fsSL"; "-o"; "/etc/apt/trusted.gpg.d/fury-nushell.asc"; "https://apt.fury.io/nushell/gpg.key" }
+    creates = "/etc/apt/trusted.gpg.d/fury-nushell.asc"
+  }
+  new File {
+    path = "/etc/apt/sources.list.d/fury.list"
+    content = "deb https://apt.fury.io/nushell/ /\n"
+    mode = "0644"
+  }
+  new debian.AptPackageIndex {}
+  new debian.AptPackages { names { "nushell" } }
+  } }
+  // The holla stage stays before the mise stage: the lowering refuses
+  // an install that shares a host with a workflow-written repository in
+  // any earlier stage, so the stage that writes one goes last and every
+  // install plans against the candidates the host already has.
+  new Stage { title = "Holla"; hosts = new Listing { base }; steps {
+  // The playbook installs the keyring with a shell script and refreshes
+  // the index through a handler; the catalogue has no handlers, so the
+  // index below is the ordinary step the design asks for, ordered before
+  // the install. The script reports a change unless the key is already
+  // there, so the first apply reports the install and the second is a
+  // no-change.
+  new Script {
+    title = "Install the holla apt signing key"
+    bash = """
+      install -m 0755 -d /etc/apt/keyrings
+      if [ ! -f /etc/apt/keyrings/holla.gpg ]; then
+        curl -fsSL https://holla-apt.tailrocks.com/holla.gpg | tee /etc/apt/keyrings/holla.gpg > /dev/null
+        echo "installed"
+      else
+        echo "exists"
+      fi
+      """
+    changes = new UnlessOutput { stdoutContains = "exists" }
+  }
+  new File {
+    path = "/etc/apt/sources.list.d/holla.list"
+    content = "deb [signed-by=/etc/apt/keyrings/holla.gpg] https://holla-apt.tailrocks.com stable main\n"
+    mode = "0644"
+  }
+  new debian.AptPackageIndex {}
+  // Holla is the project's own CLI and stays on the newest published
+  // release, which the playbook spells `state: latest`.
+  new debian.AptPackages { names { "holla" }; latest = true }
+  } }
+  new Stage { title = "Mise"; hosts = new Listing { base }; steps {
+  new debian.AptRepository {
+    name = "mise"
+    url = "https://mise.jdx.dev/deb"
+    suite = "stable"
+    components { "main" }
+    architectures { "amd64" }
+    signingKey = read("mise-apt-key.asc").text
+  }
+  new debian.AptPackageIndex {}
+  // BLOCKED on the apt track: installing from a repository the workflow
+  // writes is refused in this stage and in every later one on the host
+  // (check and diff plan against candidates the host still has), so the
+  // mise package and every toolchain install wait on that design. Each
+  // toolchain command is `changes = "never"` when it lands: the tools
+  // converge by their own version selection, and an always-change would
+  // dirty every apply.
+  // new debian.AptPackages { names { "mise" } }
+  // new Command { run { "mise"; "install"; "java@oracle-graalvm-25.0.4.1.1" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "java@oracle-graalvm-25.0.4.1.1" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "rust@stable" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "cargo-binstall" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "cargo:rust-script" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "cargo:just" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "cargo:shellfirm" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "cargo:tirith" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "cargo:bottom" }; changes = "never" }
+  // new Command { run { "mise"; "use"; "-g"; "cargo:zellij" }; changes = "never" }
+  } }
+}
+
+name = "install-base"

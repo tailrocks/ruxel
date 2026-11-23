@@ -1,0 +1,39 @@
+// The install-base package set: the stock-source packages of the base
+// play, the root shell they provide, and the small host state around
+// them. /bin/zsh comes from the package set, which no step manages as a
+// file: the shell is the host's own, so no provider step is needed. The
+// Git LFS setup only writes missing filters, so it never reports a
+// change: the first apply under-reports the one-time setup instead of
+// reporting a change on every apply.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "Base packages"; hosts = inventory.workers; steps {
+  new debian.AptPackageIndex {}
+  new debian.AptPackages {
+    names {
+      "gpg"
+      "sudo"
+      "wget"
+      "curl"
+      "zsh"
+      "git"
+      "git-lfs"
+      "unzip"
+      "tmux"
+      "iotop"
+      "bat"
+      "ncurses-term"
+      "build-essential"
+      "pkg-config"
+      "libssl-dev"
+    }
+  }
+  new Command { title = "Initialize Git LFS"; run { "git"; "lfs"; "install" }; changes = "never" }
+  new Symlink { path = "/usr/local/bin/bat"; target = "/usr/bin/batcat" }
+  new linux.User { user = "root"; shell = "/bin/zsh" }
+} } }
+
+name = "valid/install-base-packages.pkl"
