@@ -4,6 +4,8 @@ mod absent;
 mod alias;
 #[path = "tests/duplicates.rs"]
 mod duplicates;
+#[path = "tests/match_identity.rs"]
+mod match_identity;
 #[path = "tests/parsing.rs"]
 mod parsing;
 #[path = "tests/position.rs"]

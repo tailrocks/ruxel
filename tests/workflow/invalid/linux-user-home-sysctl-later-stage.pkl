@@ -1,0 +1,28 @@
+// expect: leaves /etc/sysctl.d/90-ruxel.conf as the account's home directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A present account's home is a directory its task creates, so it is a
+// directory-producing owner of that path like any other: a later
+// overlapping-host stage that persists a sysctl there cannot join its
+// entry to a directory, and the sysctl task fails after the account and
+// its home have already been created.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; home = "/etc/sysctl.d/90-ruxel.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/90-ruxel.conf" }
+    }
+  }
+}
+
+name = "invalid/linux-user-home-sysctl-later-stage.pkl"

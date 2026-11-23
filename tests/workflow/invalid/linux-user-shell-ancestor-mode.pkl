@@ -1,0 +1,23 @@
+// expect: does not let the account through
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The account's task needs every directory of the shell's path to let
+// it in: a shell at mode 0755 beneath a directory at mode 0700 is a
+// file the account cannot walk to, so `shell_allowed` refuses the
+// shell — after the earlier tasks have already changed the host. The
+// managed ancestors of the shell count, not only the shell's own path.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/opt/private"; mode = "0700" }
+      new File { path = "/opt/private/appsh"; content = "#!/bin/sh\n"; mode = "0755" }
+      new linux.User { user = "app"; shell = "/opt/private/appsh" }
+    }
+  }
+}
+
+name = "invalid/linux-user-shell-ancestor-mode.pkl"
