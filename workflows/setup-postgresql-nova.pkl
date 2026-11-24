@@ -219,12 +219,13 @@ stages {
     components { "main" }
     signingKey = read("pgdg-apt-key.asc").text
   }
-  // BLOCKED on the apt track: installing from a repository the workflow
-  // writes is refused in this stage and in every later one on the host
-  // (check and diff plan against candidates the host still has), so the
-  // PostgreSQL 19 installs wait on that track's design.
-  // new debian.AptPackages { names { "postgresql-19" } }
-  // new debian.AptPackages { names { "postgresql-server-dev-19" } }
+  // The PostgreSQL 19 installs order after the PGDG repository through
+  // the ordinary index refresh (#166): repository, then index, then
+  // install plans against the published candidates in apply and predicts
+  // a pending install in check and diff.
+  new debian.AptPackageIndex {}
+  new debian.AptPackages { names { "postgresql-19" } }
+  new debian.AptPackages { names { "postgresql-server-dev-19" } }
   } }
   new Stage { title = "Set up postgresql-nova"; hosts = new Listing { postgresqlNova }; steps {
   new Directory { path = "/var/lib/postgresql"; mode = "0755" }
