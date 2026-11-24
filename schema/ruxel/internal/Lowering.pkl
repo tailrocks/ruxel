@@ -3351,7 +3351,7 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["postgresRole"] = (s) -> fields(List(roleNameIdentity(s.name), fields(List("secret", s.password.parts)), optional(s.roleAttrFlags), optional(s.loginUser), optional(s.loginDb), postgresPort(s.loginPort), optional(s.becomeUser)))
   ["postgresDatabase"] = (s) -> fields(List(s.name, optionalName(s.owner), optional(s.loginUser), optional(s.loginDb), postgresPort(s.loginPort), optional(s.becomeUser)))
   ["postgresSchema"] = (s) -> fields(List(s.name, s.loginDb, optionalName(s.owner), optional(s.loginUser), postgresPort(s.loginPort), optional(s.becomeUser)))
-  ["postgresPrivilege"] = (s) -> fields(List(s.loginDb, s.type, privilegePrivs(s.privs), fields(keyOrder.set(privilegeObjs(s))), optional(effectiveSchema(s)), roleNameIdentity(s.role), fields(keyOrder.set(s.targetRoles.toList())), optional(s.loginUser), postgresPort(s.loginPort), optional(s.becomeUser)))
+  ["postgresPrivilege"] = (s) -> fields(List(s.loginDb, s.type, privilegePrivs(s.privs), fields(keyOrder.set(privilegeObjs(s))), optional(effectiveSchema(s)), roleNameIdentity(s.role), fields(keyOrder.set(effectiveTargets(s))), optional(s.loginUser), postgresPort(s.loginPort), optional(s.becomeUser)))
   ["pendingRestartNotice"] = (s) -> fields(List(s.output, s.version, s.cluster))
   ["pgHbaFile"] = (s) -> fields(List(s.path, fields(s.rules.toList().map((r) -> pgHbaRuleIdentity(r)))))
   ["capture"] = (s) -> s.id()
@@ -3527,6 +3527,16 @@ const function defaultTarget(s: postgres.Privilege): String =
   if (!s.targetRoles.isEmpty) " for \(keyOrder.set(s.targetRoles.toList()).join(", "))"
   else if (s.loginUser != null) " for \(s.loginUser)"
   else ""
+
+/// The target roles a default-privilege grant manages, as a list: the
+/// stated targets, or the login role when the grant names none. The
+/// fingerprint canonicalizes the same fallback the subject names, so an
+/// implied target and the same stated target share an identity and merge
+/// instead of conflicting.
+const function effectiveTargets(s: postgres.Privilege): List<String> =
+  if (!s.targetRoles.isEmpty) s.targetRoles.toList()
+  else if (s.type == "default_privs" && s.loginUser != null) List(s.loginUser)
+  else s.targetRoles.toList()
 
 /// systemd's name for a service: `foo` is `foo.service`.
 const function unitName(name: String): String = if (name.contains(".")) name else "\(name).service"
