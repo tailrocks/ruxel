@@ -110,7 +110,7 @@ fn test_policy() -> Option<String> {
 /// The canned-content counterpart of [`system_id_ranges`]: the last
 /// uncommented line per key wins — the way `USERGROUPS_ENAB` resolves
 /// (see [`super::holders::usergroups_enabled_from`]). An omitted key
-/// falls back to shadow-utils: 100 per system floor, each ceiling from
+/// falls back to shadow-utils: 101 per system floor, each ceiling from
 /// its regular floor minus one. A present but unparsable key — or a
 /// floor above its ceiling — is no range, which fails closed downstream.
 pub(super) fn system_id_ranges_from(content: &str) -> Option<SystemRanges> {
@@ -131,9 +131,9 @@ pub(super) fn system_id_ranges_from(content: &str) -> Option<SystemRanges> {
     let uid_floor = value(content, "UID_MIN", 1000)?;
     let gid_floor = value(content, "GID_MIN", 1000)?;
     let ranges = SystemRanges {
-        uid_min: value(content, "SYS_UID_MIN", 100)?,
+        uid_min: value(content, "SYS_UID_MIN", 101)?,
         uid_max: value(content, "SYS_UID_MAX", uid_floor.saturating_sub(1))?,
-        gid_min: value(content, "SYS_GID_MIN", 100)?,
+        gid_min: value(content, "SYS_GID_MIN", 101)?,
         gid_max: value(content, "SYS_GID_MAX", gid_floor.saturating_sub(1))?,
     };
     (ranges.uid_min <= ranges.uid_max && ranges.gid_min <= ranges.gid_max).then_some(ranges)

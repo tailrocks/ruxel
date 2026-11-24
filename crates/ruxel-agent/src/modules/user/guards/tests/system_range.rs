@@ -68,13 +68,17 @@ fn the_system_range_resolves_like_usergroups_enab() {
         .is_none(),
         "a floor above its ceiling is no range"
     );
+    assert!(
+        super::super::system_id_ranges_from("SYS_UID_MAX 100\n").is_none(),
+        "an omitted floor defaults to 101, above a ceiling of 100"
+    );
 }
 
 #[test]
 fn omitted_range_keys_fall_back_to_shadow_utils_defaults() {
     // Thread 359: a login.defs that omits the range keys is not a
     // missing policy — shadow-utils draws system accounts from
-    // 100-999 by default, so the guard keeps that range instead of
+    // 101-999 by default, so the guard keeps that range instead of
     // failing closed on the missing keys.
     let ranges = super::super::system_id_ranges_from("SYS_UID_MIN 100\n")
         .expect("an omitted key falls back to its default");
@@ -85,13 +89,13 @@ fn omitted_range_keys_fall_back_to_shadow_utils_defaults() {
     );
     assert_eq!(
         (ranges.gid_min, ranges.gid_max),
-        (100, 999),
+        (101, 999),
         "the omitted gid keys default"
     );
     let ranges = super::super::system_id_ranges_from("# no range keys at all\n")
         .expect("no keys still parse");
-    assert_eq!((ranges.uid_min, ranges.uid_max), (100, 999));
-    assert_eq!((ranges.gid_min, ranges.gid_max), (100, 999));
+    assert_eq!((ranges.uid_min, ranges.uid_max), (101, 999));
+    assert_eq!((ranges.gid_min, ranges.gid_max), (101, 999));
     // The boundary still guards removals under the defaulted policy.
     let _policy = super::super::pin_test_policy("# no range keys at all\n");
     let entry = |uid: u64| super::super::super::PasswdEntry {
@@ -125,8 +129,8 @@ fn an_omitted_system_ceiling_comes_from_the_regular_floor() {
     // up to 1999, which the guard keeps.
     let ranges = super::super::system_id_ranges_from("UID_MIN 2000\nGID_MIN 2000\n")
         .expect("the omitted ceilings derive from the regular floors");
-    assert_eq!((ranges.uid_min, ranges.uid_max), (100, 1999));
-    assert_eq!((ranges.gid_min, ranges.gid_max), (100, 1999));
+    assert_eq!((ranges.uid_min, ranges.uid_max), (101, 1999));
+    assert_eq!((ranges.gid_min, ranges.gid_max), (101, 1999));
     assert!(super::super::system_uid_kept(1500, &ranges));
     assert!(!super::super::system_uid_kept(2000, &ranges));
     let _policy = super::super::pin_test_policy("UID_MIN 2000\nGID_MIN 2000\n");
