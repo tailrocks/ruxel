@@ -72,6 +72,19 @@
         "jdx/mise-action"
       ],
       "enabled": false
+    },
+    {
+      "description": [
+        "Decline mr-boxington updates while upstream publishes only the v-prefixed v1.31.0 the mise backend cannot resolve (chain #167/#168/#169/#170 closed: identical 1-line version-only diffs, lockfile untouched, red renovate/artifacts + plan + generated-workflows). Remove when upstream publishes a resolvable release or the mise backend handles the v prefix."
+      ],
+      "matchManagers": [
+        "mise"
+      ],
+      "matchDepNames": [
+        "mr-boxington",
+        "jdx/mr-boxington"
+      ],
+      "enabled": false
     }
   ]
 }
