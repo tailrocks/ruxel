@@ -1,0 +1,29 @@
+// Default privileges without target roles ride the login role's future
+// tables, so the same schema granted through two logins is two independent
+// grants, not a conflict.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "Looker reads future redshift tables"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "default_privs"
+    privs = "SELECT"
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "default_privs"
+    privs = "SELECT"
+    schema = "public"
+    role = "looker"
+    loginUser = "kestra"
+    loginPort = 40000
+  }
+} } }
+
+name = "valid/postgres-default-privs-login-target.pkl"

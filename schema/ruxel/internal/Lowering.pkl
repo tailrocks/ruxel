@@ -857,6 +857,28 @@ function withMetas(ix: StageIndex): StageIndex =
 function stageProblems(s: core.Stage, ix: StageIndex): List<String> =
   (hostsTwice(s) + positions(ix.steps).flatMap((i) -> problemsAt(ix, i)) + repeatedCaptures(ix) + mixedTriggers(ix)).map((p) -> "Stage \"\(s.title)\": \(p)")
 
+/// The overlong static texts among the step's named fields: PostgreSQL
+/// truncates identifiers past 63 bytes, so a longer static name is refused
+/// before an apply creates the silently truncated thing — and before the
+/// next apply mistakes the truncation for an absent object and fails on a
+/// duplicate. Each pair names its field and carries its text; an empty text
+/// (an unset optional, or a secret, whose value evaluation never sees)
+/// states nothing to check. Lengths count characters: every refused name is
+/// invalid in any encoding, while a multibyte name within 63 characters can
+/// still exceed 63 bytes — the reported ASCII case and every name the
+/// workflows state are covered.
+function longNames(s: core.Step, fields: List<List<String>>): List<String> =
+  fields.flatMap((pair) ->
+    if (pair[1].length > 63) List("'\(name(s))': the \(pair[0]) is \(pair[1].length) characters; PostgreSQL truncates identifiers past 63 bytes, so name it shorter")
+    else List())
+
+/// Whether the notice reads exactly one capture's output and nothing else:
+/// `noticeStdout` renders only that capture's raw stdout, so any added text
+/// would silently never print.
+function readsOneCaptureExactly(s: postgres.PendingRestartNotice): Boolean =
+  let (used = capturesUsed(s))
+  used.length == 1 && s.output == "__ruxel_rt_8d41.results.\(used.first).stdout__"
+
 /// A capture runs once per stage, so every `stdout()` names exactly one
 /// read, and a `local` holding a capture holds one value.
 function repeatedCaptures(ix: StageIndex): List<String> =
@@ -1203,12 +1225,37 @@ function postgresSettings(s: core.Step): List<String> =
     List("'\(name(s))': ALL_IN_SCHEMA names every table of the schema, so it rides alone; grant it alone or name tables, not both")
   else if (s is postgres.Privilege && mixesAllWithOthers(s))
     List("'\(name(s))': ALL grants every \(s.type) privilege, so it rides alone; name ALL or list privileges, not both")
+  // These unconditional kind branches close their kinds: the first true
+  // branch wins, so every kind-specific refusal stays above them — a
+  // branch here that returns empty would otherwise swallow the refusals
+  // below it for the whole kind.
+  else if (s is postgres.Role)
+    longNames(s, List(
+      List("role's name", postgres.staticOrEmpty(s.name)),
+      List("login database", s.loginDb ?? "")))
+  else if (s is postgres.Database)
+    longNames(s, List(
+      List("database's name", s.name),
+      List("database's owner", postgres.staticOrEmpty(s.owner)),
+      List("login database", s.loginDb ?? "")))
+  else if (s is postgres.Schema)
+    longNames(s, List(
+      List("schema's name", s.name),
+      List("schema's database", s.loginDb),
+      List("schema's owner", postgres.staticOrEmpty(s.owner))))
+  else if (s is postgres.Privilege)
+    longNames(s, List(
+      List("grant's database", s.loginDb),
+      List("grant's schema", s.schema ?? ""),
+      List("granted role", postgres.staticOrEmpty(s.role))))
+      + s.objs.toList().flatMap((o) -> longNames(s, List(List("granted object", o))))
+      + s.targetRoles.toList().flatMap((t) -> longNames(s, List(List("target role", t))))
   else if (s is postgres.PgHbaFile)
     s.rules.toList().flatMap((r) -> postgres.ruleProblems(r)).map((problem) -> "'\(name(s))': \(problem)")
   else if (s is postgres.PendingRestartNotice && hasSecrets(s.output))
     List("'\(name(s))': a notice reads a capture's output, never a secret; read the report's stdout()")
-  else if (s is postgres.PendingRestartNotice && captureRefs(s.output).length != 1)
-    List("'\(name(s))': a notice reads exactly one capture's output; read the report's stdout()")
+  else if (s is postgres.PendingRestartNotice && !readsOneCaptureExactly(s))
+    List("'\(name(s))': a notice reads one capture's output exactly; read the report's stdout() with no added text")
   else List()
 
 /// Role attribute flags the agent accepts, uppercased: the comparison is
@@ -3304,7 +3351,7 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["postgresRole"] = (s) -> fields(List(roleNameIdentity(s.name), fields(List("secret", s.password.parts)), optional(s.roleAttrFlags), optional(s.loginUser), optional(s.loginDb), postgresPort(s.loginPort), optional(s.becomeUser)))
   ["postgresDatabase"] = (s) -> fields(List(s.name, optionalName(s.owner), optional(s.loginUser), optional(s.loginDb), postgresPort(s.loginPort), optional(s.becomeUser)))
   ["postgresSchema"] = (s) -> fields(List(s.name, s.loginDb, optionalName(s.owner), optional(s.loginUser), postgresPort(s.loginPort), optional(s.becomeUser)))
-  ["postgresPrivilege"] = (s) -> fields(List(s.loginDb, s.type, privilegePrivs(s.privs), fields(keyOrder.set(privilegeObjs(s))), optional(s.schema), roleNameIdentity(s.role), fields(keyOrder.set(s.targetRoles.toList())), optional(s.loginUser), postgresPort(s.loginPort), optional(s.becomeUser)))
+  ["postgresPrivilege"] = (s) -> fields(List(s.loginDb, s.type, privilegePrivs(s.privs), fields(keyOrder.set(privilegeObjs(s))), optional(effectiveSchema(s)), roleNameIdentity(s.role), fields(keyOrder.set(s.targetRoles.toList())), optional(s.loginUser), postgresPort(s.loginPort), optional(s.becomeUser)))
   ["pendingRestartNotice"] = (s) -> fields(List(s.output, s.version, s.cluster))
   ["pgHbaFile"] = (s) -> fields(List(s.path, fields(s.rules.toList().map((r) -> pgHbaRuleIdentity(r)))))
   ["capture"] = (s) -> s.id()
@@ -3325,8 +3372,10 @@ const function roleNameIdentity(n: Any): String =
 /// the name's identity.
 const function optionalName(n: Any?): String = if (n == null) "-" else roleNameIdentity(n)
 
-/// What enters the identity of an optional login port: nothing, or the port.
-const function postgresPort(p: Int?): String = if (p == null) "-" else "\(p)"
+/// What enters the identity of an optional login port: the effective port.
+/// The agent defaults an omitted port to 5432, so an unset port and an
+/// explicit 5432 are one cluster, not two.
+const function postgresPort(p: Int?): String = if (p == null) "5432" else "\(p)"
 
 /// What enters the identity of one access rule: every column, with a
 /// secret username as its encoded reference — never its value — the way
@@ -3439,10 +3488,10 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
 const function secretRoleName(n: Any): String =
   if (n is postgres.SecretName) "with a secret name " + n.parts.sha256.substring(0, 16) else n.toString()
 
-/// The port a subject names, when the step states one: one host can run
-/// several clusters, and the same name on another port is another thing.
-/// Unset states no port, the way the fingerprint states none.
-const function portSubject(p: Int?): String = if (p == null) "" else " on port \(p)"
+/// The port a subject names: the effective one, since the agent defaults
+/// an omitted port to 5432. One host can run several clusters, and the
+/// same name on another port is another thing.
+const function portSubject(p: Int?): String = " on port \(if (p == null) 5432 else p)"
 
 /// The thing a grant manages, without its privileges: the kind, the role,
 /// the objects and the database. Two grants for one thing with different
@@ -3455,12 +3504,29 @@ const function privilegeSubject(s: postgres.Privilege): String =
 /// schemas or tables with their schema, or the future tables of the schema —
 /// and, for default privileges, the roles whose tables carry them. Order-
 /// and repeat-free: the agent reads a set, so the same names in another
-/// order or twice over are one thing, not two.
+/// order or twice over are one thing, not two. Defaults the agent supplies
+/// are named the way the agent reads them: an omitted table schema is
+/// `public`, and default privileges without target roles ride the login
+/// role's future tables.
 const function privilegeTarget(s: postgres.Privilege): String =
   if (s.type == "database") "the database"
   else if (s.type == "schema") "schemas \(keyOrder.set(privilegeObjs(s)).join(", "))"
-  else if (s.type == "table") "tables \(keyOrder.set(privilegeObjs(s)).join(", ")) in schema \(s.schema ?? "-")"
-  else "future tables in schema \(s.schema ?? "-")" + (if (s.targetRoles.isEmpty) "" else " for \(keyOrder.set(s.targetRoles.toList()).join(", "))")
+  else if (s.type == "table") "tables \(keyOrder.set(privilegeObjs(s)).join(", ")) in schema \(effectiveSchema(s))"
+  else "future tables in schema \(effectiveSchema(s))" + defaultTarget(s)
+
+/// The schema a table or default-privilege grant manages: the stated one,
+/// or `public`, which the agent reads when the grant states none. Other
+/// kinds name no schema.
+const function effectiveSchema(s: postgres.Privilege): String =
+  if (s.type == "table" || s.type == "default_privs") s.schema ?? "public" else s.schema ?? "-"
+
+/// The roles whose future tables a default-privilege grant manages: the
+/// stated targets, or the login role, whose tables the agent changes when
+/// no target is named.
+const function defaultTarget(s: postgres.Privilege): String =
+  if (!s.targetRoles.isEmpty) " for \(keyOrder.set(s.targetRoles.toList()).join(", "))"
+  else if (s.loginUser != null) " for \(s.loginUser)"
+  else ""
 
 /// systemd's name for a service: `foo` is `foo.service`.
 const function unitName(name: String): String = if (name.contains(".")) name else "\(name).service"
