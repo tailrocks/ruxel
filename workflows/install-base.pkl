@@ -75,12 +75,14 @@ stages {
   } }
   new Stage { title = "Shell"; hosts = new Listing { base }; steps {
   // The playbook downloads the installer and pipes it to sh; the catalogue
-  // has no download step, so one shell step does both, run under the
-  // pipefail wrapper so a failed download fails the step instead of
-  // executing an empty script. The guard makes a second apply a no-change.
+  // has no download step, so one shell step does both. The installer lands
+  // in a temp file first and the script is fed to sh from it with the same
+  // arguments the pipe form used: a bare pipe reports a failed download as
+  // success, and the shell step runs under plain sh with no pipefail
+  // wrapper. The guard makes a second apply a no-change.
   new Script {
     title = "Install Oh My Zsh"
-    bash = "curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | sh -s -- \"\" --unattended\n"
+    bash = "tmp=$(mktemp /tmp/oh-my-zsh.install.XXXXXX)\nif curl -fsSL --remove-on-error -o \"$tmp\" https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh && test -s \"$tmp\"; then\nsh -s \"\" --unattended < \"$tmp\"\nrc=$?\nelse\nrc=1\nfi\nrm -f \"$tmp\"\nexit $rc\n"
     creates = "/root/.oh-my-zsh"
   }
   // BLOCKED on Track A: the playbook tracks zsh-autosuggestions at
@@ -98,10 +100,12 @@ stages {
   new linux.User { user = "root"; shell = "/bin/zsh" }
   // The playbook downloads the install script and pipes it to sh on
   // stdin; the catalogue has no download step, so one shell step does
-  // both. The guard makes a second apply a no-change.
+  // both, from a temp file with the same arguments so a failed download
+  // fails the step instead of running an empty script. The guard makes a
+  // second apply a no-change.
   new Script {
     title = "Install Starship"
-    bash = "curl -fsSL https://starship.rs/install.sh | sh -s -- -y\n"
+    bash = "tmp=$(mktemp /tmp/starship.install.XXXXXX)\nif curl -fsSL --remove-on-error -o \"$tmp\" https://starship.rs/install.sh && test -s \"$tmp\"; then\nsh -s -- -y < \"$tmp\"\nrc=$?\nelse\nrc=1\nfi\nrm -f \"$tmp\"\nexit $rc\n"
     creates = "/usr/local/bin/starship"
   }
   } }

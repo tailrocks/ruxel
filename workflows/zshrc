@@ -7,10 +7,6 @@ export ZSH="$HOME/.oh-my-zsh"
 # forward and backspace stops deleting. Keep this empty whenever starship
 # init runs below.
 ZSH_THEME=""
-DISABLE_AUTO_UPDATE=true
-# ^ deprecated: ':omz:update' mode below takes precedence, and keeping both
-# contradicts the update policy. Remove this switch once the playbook drops
-# it; the zstyle alone expresses auto updates.
 
 zstyle ':omz:update' mode auto
 
