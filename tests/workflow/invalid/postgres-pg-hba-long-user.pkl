@@ -1,0 +1,14 @@
+// An access-file username past PostgreSQL's 63-byte identifier limit
+// would render a line the reload reads truncated.
+// expect: pg_hba user "0123456789012345678901234567890123456789012345678901234567890123" is 64 characters; PostgreSQL truncates identifiers past 63 bytes
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  postgres.renderPgHba(new Listing {
+    new postgres.PgHbaRule { type = "local"; database = "all"; user = "0123456789012345678901234567890123456789012345678901234567890123"; method = "peer" }
+  }, "/etc/postgresql/19/main/pg_hba.conf")
+} } }
+
+name = "invalid/postgres-pg-hba-long-user.pkl"

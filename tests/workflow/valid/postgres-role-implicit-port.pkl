@@ -1,0 +1,23 @@
+// An omitted port is the agent default, not another cluster: the same
+// role with an unset port and with 5432 stated is one declaration, so the
+// two merge instead of conflicting.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "Chainargos owns one cluster"; hosts = inventory.workers; steps {
+  new postgres.Role {
+    name = "chainargos"
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    loginUser = "postgres"
+  }
+  new postgres.Role {
+    name = "chainargos"
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    loginUser = "postgres"
+    loginPort = 5432
+  }
+} } }
+
+name = "valid/postgres-role-implicit-port.pkl"
