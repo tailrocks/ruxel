@@ -39,10 +39,11 @@ pub(super) struct SystemRanges {
 }
 
 /// The host's configured system-account ranges, read from
-/// `/etc/login.defs`. An unreadable policy — or a missing or
+/// `/etc/login.defs`. An unreadable policy — or a present but
 /// unparsable key, or a floor above its ceiling — fails closed: the
 /// removal is refused instead of treating the number as a removable
-/// login account.
+/// login account. A key the file omits falls back to the shadow-utils
+/// default (see [`system_id_ranges_from`]).
 pub(super) fn system_id_ranges() -> Result<SystemRanges, String> {
     // The tests pin the host policy for the thread they run on, so a
     // removal is provable without the host's own file — including on
@@ -51,7 +52,7 @@ pub(super) fn system_id_ranges() -> Result<SystemRanges, String> {
     if let Some(content) = test_policy() {
         return system_id_ranges_from(&content).ok_or_else(|| {
             "cannot read the host's system-account range from /etc/login.defs: \
-             SYS_UID_MIN, SYS_UID_MAX, SYS_GID_MIN and SYS_GID_MAX must each name one number, with each floor at or below its ceiling"
+             each present SYS_UID_MIN, SYS_UID_MAX, SYS_GID_MIN, SYS_GID_MAX, UID_MIN and GID_MIN key must name one number, with each floor at or below its ceiling"
                 .to_string()
         });
     }
@@ -60,7 +61,7 @@ pub(super) fn system_id_ranges() -> Result<SystemRanges, String> {
     })?;
     system_id_ranges_from(&content).ok_or_else(|| {
         "cannot read the host's system-account range from /etc/login.defs: \
-         SYS_UID_MIN, SYS_UID_MAX, SYS_GID_MIN and SYS_GID_MAX must each name one number, with each floor at or below its ceiling"
+         each present SYS_UID_MIN, SYS_UID_MAX, SYS_GID_MIN, SYS_GID_MAX, UID_MIN and GID_MIN key must name one number, with each floor at or below its ceiling"
             .to_string()
     })
 }
@@ -108,11 +109,12 @@ fn test_policy() -> Option<String> {
 
 /// The canned-content counterpart of [`system_id_ranges`]: the last
 /// uncommented line per key wins — the way `USERGROUPS_ENAB` resolves
-/// (see [`super::holders::usergroups_enabled_from`]) — and anything
-/// but four parsable numbers with each floor at or below its ceiling
-/// parses as no range, which fails closed downstream.
+/// (see [`super::holders::usergroups_enabled_from`]). An omitted key
+/// falls back to shadow-utils: 101 per system floor, each ceiling from
+/// its regular floor minus one. A present but unparsable key — or a
+/// floor above its ceiling — is no range, which fails closed downstream.
 pub(super) fn system_id_ranges_from(content: &str) -> Option<SystemRanges> {
-    fn value(content: &str, key: &str) -> Option<u64> {
+    fn value(content: &str, key: &str, default: u64) -> Option<u64> {
         let mut found = None;
         for line in content.lines() {
             let stripped = line.split('#').next().unwrap_or("").trim();
@@ -124,13 +126,15 @@ pub(super) fn system_id_ranges_from(content: &str) -> Option<SystemRanges> {
                 found = Some(parts.next()?.parse::<u64>().ok()?);
             }
         }
-        found
+        Some(found.unwrap_or(default))
     }
+    let uid_floor = value(content, "UID_MIN", 1000)?;
+    let gid_floor = value(content, "GID_MIN", 1000)?;
     let ranges = SystemRanges {
-        uid_min: value(content, "SYS_UID_MIN")?,
-        uid_max: value(content, "SYS_UID_MAX")?,
-        gid_min: value(content, "SYS_GID_MIN")?,
-        gid_max: value(content, "SYS_GID_MAX")?,
+        uid_min: value(content, "SYS_UID_MIN", 101)?,
+        uid_max: value(content, "SYS_UID_MAX", uid_floor.saturating_sub(1))?,
+        gid_min: value(content, "SYS_GID_MIN", 101)?,
+        gid_max: value(content, "SYS_GID_MAX", gid_floor.saturating_sub(1))?,
     };
     (ranges.uid_min <= ranges.uid_max && ranges.gid_min <= ranges.gid_max).then_some(ranges)
 }
@@ -391,5 +395,5 @@ pub(super) fn planned_gid(group: &str, check_mode: bool) -> Result<Option<u32>, 
 /// databases still show the numbers and the sets the plan has already
 /// left behind while check mode runs.
 #[cfg(test)]
-#[path = "guards/tests.rs"]
+#[path = "guards/tests/mod.rs"]
 mod tests;

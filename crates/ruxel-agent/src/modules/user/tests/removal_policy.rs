@@ -69,20 +69,19 @@ fn a_system_account_is_never_removed_whatever_the_workflow_states() {
 
 #[test]
 fn an_unreadable_host_policy_fails_a_removal_closed() {
-    // Thread 336: where the host names no usable system range — the
-    // file is missing, or a key is missing or unparsable — the removal
-    // is refused instead of treating the number as a removable login
-    // account. The pinned content exercises the full fail-closed path:
-    // the pin, the parse and the refusal mapping.
+    // Thread 336: where the host names no usable system range — a key
+    // is present but unparsable, or a floor is above its ceiling — the
+    // removal is refused instead of treating the number as a removable
+    // login account. The pinned content exercises the full fail-closed
+    // path: the pin, the parse and the refusal mapping. Thread 359: a
+    // key the file omits is not unusable — it falls back to the
+    // shadow-utils default — so the empty and partial policies below
+    // parse and the login-uid removal proceeds.
     let app = PasswdEntry {
         uid: 1500,
         ..PasswdEntry::default()
     };
-    for policy in [
-        "",
-        "SYS_UID_MIN 100\n",
-        "SYS_UID_MIN many\nSYS_UID_MAX 999\nSYS_GID_MIN 100\nSYS_GID_MAX 999\n",
-    ] {
+    for policy in [canned_malformed_policy(), canned_inverted_policy()] {
         let _policy = super::super::guards::pin_test_policy(policy);
         let error = removal_allowed("app", Some(1500), Some(&app), false)
             .expect_err("an unusable host policy must fail the removal closed");
@@ -91,4 +90,23 @@ fn an_unreadable_host_policy_fails_a_removal_closed() {
             .expect_err("an unusable host policy must fail the removal closed");
         assert!(error.contains("system-account range"), "{error}");
     }
+    for policy in ["", "SYS_UID_MIN 100\n"] {
+        let _policy = super::super::guards::pin_test_policy(policy);
+        assert!(
+            removal_allowed("app", Some(1500), Some(&app), false).is_ok(),
+            "omitted keys default, so a login uid stays removable"
+        );
+        assert!(
+            group_removal_allowed("app", Some(1500), 1500, None).is_ok(),
+            "omitted keys default, so a login gid stays removable"
+        );
+    }
+}
+
+fn canned_malformed_policy() -> &'static str {
+    "SYS_UID_MIN many\nSYS_UID_MAX 999\nSYS_GID_MIN 100\nSYS_GID_MAX 999\n"
+}
+
+fn canned_inverted_policy() -> &'static str {
+    "SYS_UID_MIN 1000\nSYS_UID_MAX 999\nSYS_GID_MIN 100\nSYS_GID_MAX 999\n"
 }

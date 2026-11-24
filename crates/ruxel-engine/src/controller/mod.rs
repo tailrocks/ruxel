@@ -234,6 +234,7 @@ mod selection;
 mod static_sysctl;
 pub use ledger::ledger_key;
 pub use run::{run, run_with_full_config};
+pub(crate) use selection::origin_targeted;
 pub use selection::selected_hosts;
 mod local;
 mod loop_vars;

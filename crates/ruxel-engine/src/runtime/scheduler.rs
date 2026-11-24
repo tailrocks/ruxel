@@ -105,8 +105,11 @@ pub(super) async fn run_plays(
 /// ran: a destination whose direct recap lands only in a later play is
 /// absent from `totals` when its origin's play ends, so the per-play
 /// propagation cannot mark it — and the later play never revisits the
-/// origin's delegation. The revisit runs over every play of the full
-/// configuration, the way the single-play controller run does.
+/// origin's delegation. The revisit runs over the plays of the full
+/// configuration, the way the single-play controller run does — but
+/// only the plays the origin was actually a target of: an unrelated
+/// incomplete origin must not mark another play's destinations (see
+/// [`controller::origin_targeted`]).
 fn revisit_earlier_delegations(totals: &mut BTreeMap<String, Recap>, config: &Value) {
     let incomplete: Vec<String> = totals
         .iter()
@@ -120,7 +123,9 @@ fn revisit_earlier_delegations(totals: &mut BTreeMap<String, Recap>, config: &Va
         .flatten()
     {
         for origin in &incomplete {
-            controller::mark_delegation_destinations(totals, play, origin);
+            if controller::origin_targeted(play, config, origin) {
+                controller::mark_delegation_destinations(totals, play, origin);
+            }
         }
     }
 }
@@ -193,6 +198,93 @@ mod scheduler_revisit_tests {
         assert!(
             totals["b"].filtered,
             "a destination delegated from a filtered origin in an earlier play stays filtered"
+        );
+    }
+
+    #[test]
+    fn unrelated_origins_do_not_mark_other_plays_destinations() {
+        // Thread 362: the revisit scopes its play-by-origin
+        // cross-product to the plays the origin was actually a target
+        // of. Origin `a` is filtered; the second play targets only `c`
+        // and delegates to `d`. The unscoped revisit marked `d` through
+        // the (second play, `a`) pair although `a` never ran there.
+        let play1 = json!({"targets": ["a"], "tasks": [
+            {"name": "delegated", "delegateTo": "b", "delegateAllow": ["b"],
+             "operation": {"kind": "command", "argv": ["true"]}}
+        ]});
+        let play2 = json!({"targets": ["c"], "tasks": [
+            {"name": "other", "delegateTo": "d", "delegateAllow": ["d"],
+             "operation": {"kind": "command", "argv": ["true"]}}
+        ]});
+        let config = json!({"plays": [play1.clone(), play2.clone()]});
+
+        let mut totals = BTreeMap::new();
+        totals.insert(
+            "a".to_string(),
+            Recap {
+                filtered: true,
+                ..Recap::default()
+            },
+        );
+        totals.insert("b".to_string(), Recap::default());
+        totals.insert("c".to_string(), Recap::default());
+        totals.insert("d".to_string(), Recap::default());
+        revisit_earlier_delegations(&mut totals, &config);
+        assert!(
+            totals["b"].filtered,
+            "the origin's own play still marks its destination"
+        );
+        assert!(
+            !totals["d"].filtered,
+            "an unrelated play's destination stays clean"
+        );
+        assert!(
+            !totals["c"].filtered,
+            "an unrelated origin recap stays clean"
+        );
+    }
+
+    #[test]
+    fn group_targets_count_as_actually_targeted() {
+        // The scoping expands selectors the way the run selects hosts,
+        // so an origin targeted through a group still marks its play's
+        // destinations — while a play whose group excludes the origin
+        // does not lend the origin its destinations.
+        let play1 = json!({"targets": ["web"], "tasks": [
+            {"name": "delegated", "delegateTo": "b", "delegateAllow": ["b"],
+             "operation": {"kind": "command", "argv": ["true"]}}
+        ]});
+        let play2 = json!({"targets": ["db"], "tasks": [
+            {"name": "other", "delegateTo": "d", "delegateAllow": ["d"],
+             "operation": {"kind": "command", "argv": ["true"]}}
+        ]});
+        let config = json!({
+            "inventory": {
+                "hosts": {"a": {}, "b": {}, "c": {}, "d": {}},
+                "groups": {"web": {"hosts": ["a"]}, "db": {"hosts": ["c"]}}
+            },
+            "plays": [play1.clone(), play2.clone()]
+        });
+
+        let mut totals = BTreeMap::new();
+        totals.insert(
+            "a".to_string(),
+            Recap {
+                filtered: true,
+                ..Recap::default()
+            },
+        );
+        totals.insert("b".to_string(), Recap::default());
+        totals.insert("c".to_string(), Recap::default());
+        totals.insert("d".to_string(), Recap::default());
+        revisit_earlier_delegations(&mut totals, &config);
+        assert!(
+            totals["b"].filtered,
+            "an origin targeted through a group still marks its play's destination"
+        );
+        assert!(
+            !totals["d"].filtered,
+            "a play whose group excludes the origin does not mark through it"
         );
     }
 }
