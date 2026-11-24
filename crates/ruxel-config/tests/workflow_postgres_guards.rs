@@ -229,6 +229,77 @@ fn an_empty_login_database_is_refused() -> Result {
     Ok(())
 }
 
+/// Names past PostgreSQL's 63-byte identifier limit fail before the run
+/// starts, instead of creating a silently truncated object the next apply
+/// mistakes for absent.
+#[test]
+fn overlong_names_are_refused() -> Result {
+    for (file, expected) in [
+        (
+            "postgres-role-long-name.pkl",
+            "the role's name is 64 characters; PostgreSQL truncates identifiers past 63 bytes",
+        ),
+        (
+            "postgres-pg-hba-long-user.pkl",
+            "is 64 characters; PostgreSQL truncates identifiers past 63 bytes",
+        ),
+    ] {
+        let path = root().join("invalid").join(file);
+        let error = ruxel_config::eval_config(&path, &options())
+            .err()
+            .ok_or_else(|| format!("{file} evaluated"))?
+            .to_string();
+        assert!(error.contains(expected), "{file}: {error}");
+    }
+    Ok(())
+}
+
+/// A decorated notice output names the capture but carries text the notice
+/// never renders, so only the exact placeholder is admitted.
+#[test]
+fn a_decorated_notice_output_is_refused() -> Result {
+    let path = root()
+        .join("invalid")
+        .join("postgres-notice-decorated-output.pkl");
+    let error = ruxel_config::eval_config(&path, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    let expected = "a notice reads one capture's output exactly; read the report's stdout() with no added text";
+    assert!(error.contains(expected), "{error}");
+    Ok(())
+}
+
+/// An omitted port is the agent default, not another cluster: the same
+/// resource with an unset port and with 5432 stated merges.
+#[test]
+fn an_unset_port_is_the_default_port() -> Result {
+    let config = valid("postgres-role-implicit-port.pkl")?;
+    let all = tasks(&config);
+    assert_eq!(all.len(), 1, "{all:?}");
+    Ok(())
+}
+
+/// An omitted table schema is the public schema the agent reads: the same
+/// grant with an unset schema and with public stated merges.
+#[test]
+fn an_unset_table_schema_is_the_public_schema() -> Result {
+    let config = valid("postgres-privileges-implicit-schema.pkl")?;
+    let all = tasks(&config);
+    assert_eq!(all.len(), 1, "{all:?}");
+    Ok(())
+}
+
+/// Default privileges without target roles ride the login role's future
+/// tables, so the same schema granted through two logins is two grants.
+#[test]
+fn default_privileges_without_targets_ride_the_login_role() -> Result {
+    let config = valid("postgres-default-privs-login-target.pkl")?;
+    let all = tasks(&config);
+    assert_eq!(all.len(), 2, "{all:?}");
+    Ok(())
+}
+
 /// The same schemas in another order are one grant: the two declarations
 /// merge instead of conflicting.
 #[test]

@@ -1,5 +1,5 @@
 // A notice reads a capture's output, never a static line.
-// expect: a notice reads exactly one capture's output; read the report's stdout()
+// expect: a notice reads one capture's output exactly; read the report's stdout() with no added text
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Postgres.pkl" as postgres
 import "../inventory.pkl"

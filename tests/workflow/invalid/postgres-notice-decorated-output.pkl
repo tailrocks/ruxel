@@ -1,0 +1,22 @@
+// A notice renders only the capture's raw stdout, so any added text
+// would silently never print: the output is the stdout reference alone.
+// expect: a notice reads one capture's output exactly; read the report's stdout() with no added text
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+local report = new core.Capture {
+  title = "Report settings that still require a restart"
+  bash = "psql -p 40000 -U postgres -tAXc \"SELECT 1\""
+}
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  report
+  new postgres.PendingRestartNotice {
+    output = "prefix \(report.stdout())"
+    version = "19"
+  }
+} } }
+
+name = "invalid/postgres-notice-decorated-output.pkl"
