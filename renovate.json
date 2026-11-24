@@ -62,7 +62,7 @@
     },
     {
       "description": [
-        "Decline the recurring jdx/mise workflow version bump (9th recreation closed as #150; chain #124/#136/#138/#139/#143/#144/#145/#148/#150): MISE_VERSION is hardcoded (2026.11.10) with velnor-gen tools metadata (tools-v0.1.111) and digest protection, so the bump path is a velnor-gen tools release, not a workflow edit."
+        "Decline the recurring jdx/mise workflow version bump (9th recreation closed as #150; chain #124/#136/#138/#139/#143/#144/#145/#148/#150): MISE_VERSION is hardcoded (2026.11.10) with velnor-gen tools metadata (tools-v0.1.112) and digest protection, so the bump path is a velnor-gen tools release, not a workflow edit."
       ],
       "matchManagers": [
         "github-actions"
