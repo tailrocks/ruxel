@@ -54,6 +54,7 @@ fn a_group_move_plans_no_repair_for_the_undeclared_home() {
         false,
         true,
         true,
+        true,
     )
     .expect("the group move must still plan");
     assert_eq!(
