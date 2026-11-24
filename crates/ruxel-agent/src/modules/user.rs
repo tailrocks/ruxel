@@ -597,6 +597,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // number is the allocator's to draw. Set in the creation branch and
     // read where the plan's record of the group is made.
     let mut implicit_group_created = false;
+    // Whether the step provides the account's same-name group at all:
+    // the creation brings it, the existing-account branch reconciles
+    // it — except the superuser's account, which keeps its primary
+    // group and schedules no `groupadd`, so the plan's record must
+    // not claim it either: a recorded-but-never-created group
+    // resolves through the plan's record in check mode and fails
+    // against the host in apply. Set in the existing-account branch
+    // and read where the plan's record of the group is made.
+    let mut provides_private_group = group.is_none();
 
     match entry {
         None => {
@@ -819,6 +828,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // otherwise. Every guard and the home's repair resolve
             // against the identity the plan ends up with, not against
             // the host's unchanged one.
+            //
+            // The superuser's account provides no same-name group: it
+            // keeps its primary group and schedules no `groupadd` (see
+            // `claimed_private_group_missing`), so the plan's record
+            // below claims none either — the same value gates both.
+            provides_private_group = current.uid != 0;
             let effective = effective(name, &current);
             // The account's passwd fields under the plan: the plan's
             // own record where an earlier task of the plan changed
@@ -1097,7 +1112,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 create_home,
             )?;
             // The step's footprint claims the account's private group
-            // whenever it names no primary group, and the lowering's
+            // whenever it names no primary group — except the
+            // superuser's account, which keeps its primary group and
+            // claims none — and the lowering's
             // group ordering advertises it as provided: an existing
             // account reconciles that claim — `useradd -U` only covers
             // the creation branch, and a dependent operation naming the
@@ -1141,12 +1158,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
     }
 
-    if group.is_none() {
+    if group.is_none() && provides_private_group {
         // A step that names no primary group claims its same-name
         // group — the creation brings it with `-U` (or reuses the
         // host's), the existing-account branch reconciles it above —
         // so the plan's record holds it for whatever resolves the
-        // group next.
+        // group next. The superuser's account claims none: it keeps
+        // its primary group and creates nothing, so a later task
+        // naming that group resolves it the way the host would —
+        // missing — in check mode as much as in apply, unless the
+        // plan declares the group present and creates it.
         note_planned_group(name, None);
         // Every creation the `-U` switch brings draws a number no probe
         // has seen yet — the allocator's — so the plan's record of the
@@ -1576,6 +1597,19 @@ mod cat06_batch_b {
                 Some((f[0].to_string(), uid, primary))
             })
             .expect("a non-root account with a named primary group on the host")
+    }
+
+    /// A live UID-zero account: the superuser's, whatever it is named.
+    pub(super) fn live_uid_zero_account() -> String {
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+        passwd
+            .lines()
+            .find_map(|line| {
+                let f: Vec<&str> = line.split(':').collect();
+                (f.len() >= 7 && f[2].parse::<u64>().is_ok_and(|uid| uid == 0))
+                    .then(|| f[0].to_string())
+            })
+            .expect("a UID-zero account on the host")
     }
 
     /// Two live groups whose set differs from the account's live
@@ -2053,6 +2087,33 @@ mod cat06_batch_b {
             !super::claimed_private_group_missing(None, &missing, false, true, 0),
             "a UID-zero account claims no private group in check mode"
         );
+    }
+
+    #[test]
+    fn a_uid_zero_account_records_no_private_group() {
+        // Thread 360 follow-up: the step schedules no `groupadd` for a
+        // UID-zero account, so the plan's record must claim no
+        // same-name group either — a recorded-but-never-created group
+        // resolves through the plan's record in check mode (ownership
+        // falls back to it) while the apply fails against the host.
+        let root = live_uid_zero_account();
+        super::entries::forget_planned_group(&root);
+        run(&json!({"name": root}), &check_context())
+            .expect("the check on the UID-zero account must run");
+        assert!(
+            super::planned_group(&root).is_none(),
+            "a UID-zero account records no private group"
+        );
+        // The nonzero control still records: its branch reconciles the
+        // claim with a `groupadd`.
+        let (name, _uid, _primary) = live_account();
+        super::entries::forget_planned_group(&name);
+        run(&json!({"name": name}), &check_context()).expect("the check on the account must run");
+        assert!(
+            super::planned_group(&name).is_some(),
+            "a nonzero account still records its private group"
+        );
+        super::entries::forget_planned_group(&name);
     }
 }
 /// The test stand-in for the host's account utilities: apply-mode tests
