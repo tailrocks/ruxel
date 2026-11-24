@@ -126,6 +126,14 @@ pub(super) fn run_in(
             apply_attrs_with(p, obj, &ownership, &mut changed, ctx.check_mode)?;
         }
     }
+    // Check and diff write nothing, while apply publishes the write and
+    // refreshes before the later install plans, so the candidate policy
+    // still names the host's old sources here. Record the pending policy
+    // change, so that plan reports a pending install instead of refusing
+    // a package the refresh has not published yet.
+    if needs_write && ctx.check_mode && changes_apt_policy(apt_root, p) {
+        system_state.predict_policy_change();
+    }
     result["changed"] = json!(changed);
     // The task's own provider record: check mode runs no writes, so a
     // shell an earlier copy manages is still missing from the live

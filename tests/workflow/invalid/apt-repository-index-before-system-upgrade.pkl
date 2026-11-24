@@ -1,0 +1,19 @@
+// expect: 'Refresh the index' (step 2) refreshes the package index, and 'Upgrade the system' (step 3) plans against the package lists the host already has
+// The refresh between the repository and the plan lifts the refusal for
+// an install only: a system upgrade still simulates `dist-upgrade`
+// against the package lists the host already has, so check and apply
+// would disagree and the combination stays refused. Both the index rule
+// and the repository rule refuse this shape; the index one is reported.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptRepository { title = "Add the repo"; name = "x"; url = "https://example.test"; suite = "stable"; components { "main" }; signingKey = key }
+  new debian.AptPackageIndex { title = "Refresh the index" }
+  new debian.AptSystemUpgrade { title = "Upgrade the system" }
+} } }
+
+name = "invalid/apt-repository-index-before-system-upgrade.pkl"

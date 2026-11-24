@@ -1,0 +1,33 @@
+// The install-from-a-workflow-written-repository shape: a signed
+// repository refreshes the index through the ordinary index step ordered
+// after it, and the install ordered after the refresh plans against the
+// candidates the refresh publishes. The suite is static text the way the
+// postgresql-nova play writes it: trixie for the Debian 13 host. An
+// install with no refresh between the repository and itself is still
+// refused (`invalid/apt-repository-before-install.pkl`); a second
+// repository after the refresh is still refused
+// (`invalid/apt-repository-install-after-late-repository.pkl`).
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n"
+
+stages { new Stage { title = "PostgreSQL"; hosts = inventory.workers; steps {
+  new debian.AptRepository {
+    title = "Add the PostgreSQL repository"
+    name = "pgdg"
+    url = "https://apt.example.test/pub/repos/apt"
+    suite = "trixie-pgdg"
+    components { "main" }
+    architectures { "amd64" }
+    signingKey = key
+  }
+  new debian.AptPackageIndex { title = "Refresh the index for pgdg" }
+  new debian.AptPackages {
+    title = "Install PostgreSQL 19"
+    names { "postgresql-19"; "postgresql-server-dev-19" }
+  }
+} } }
+
+name = "valid/install-base-repository-install.pkl"

@@ -3099,10 +3099,29 @@ function indexPlanning(ix: StageIndex, i: Int): List<String> =
 /// combination is refused. Only an earlier repository is a problem: a
 /// repository written after the upgrade reads the same candidates the
 /// upgrade moved.
+///
+/// An install ordered after an index that is ordered after the
+/// repository is the exception (`refreshedInStage`): the ordinary index
+/// step the design asks for refreshes the lists after the write in
+/// apply, so the install plans against the published candidates there,
+/// and in check and diff the agent predicts the pending refresh and
+/// reports a pending install instead of refusing the package. A system
+/// upgrade has no such exception: it still simulates against the old
+/// lists, so it is always refused.
 function repositoryPlanning(ix: StageIndex, i: Int): List<String> =
   if (!(ix.steps[i] is debian.AptPackages || ix.steps[i] is debian.AptSystemUpgrade)) List()
-  else earlier(i).filter((j) -> ix.steps[j] is debian.AptRepository)
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptRepository && !refreshedInStage(ix, j, i))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) writes an apt repository, and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) plans against the candidate policy; in check and diff mode the repository is never written before the plan runs, so check and apply disagree — put the two in different stages")
+
+/// Whether an index refresh stands between the repository at step `j`
+/// and the install at step `i`: the author's order the install plans
+/// against. The shape is the one the base play already writes for its
+/// plain sources — the ordinary `AptPackageIndex` step ordered before
+/// the install — and no second shape is admitted: only a refresh after
+/// every earlier repository lifts the refusal, and only for an install.
+function refreshedInStage(ix: StageIndex, j: Int, i: Int): Boolean =
+  ix.steps[i] is debian.AptPackages
+    && positions(ix.steps).any((k) -> k > j && k < i && ix.steps[k] is debian.AptPackageIndex)
 
 /// The same refusal as `indexPlanning`, across stages of one host: the
 /// lists the earlier stage refreshes outlive the stage, so splitting the
