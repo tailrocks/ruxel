@@ -43,8 +43,7 @@ pub(super) struct SystemRanges {
 /// unparsable key, or a floor above its ceiling — fails closed: the
 /// removal is refused instead of treating the number as a removable
 /// login account. A key the file omits falls back to the shadow-utils
-/// default: an omitted system ceiling derives from the regular floor
-/// (see [`system_id_ranges_from`]).
+/// default (see [`system_id_ranges_from`]).
 pub(super) fn system_id_ranges() -> Result<SystemRanges, String> {
     // The tests pin the host policy for the thread they run on, so a
     // removal is provable without the host's own file — including on
@@ -110,17 +109,10 @@ fn test_policy() -> Option<String> {
 
 /// The canned-content counterpart of [`system_id_ranges`]: the last
 /// uncommented line per key wins — the way `USERGROUPS_ENAB` resolves
-/// (see [`super::holders::usergroups_enabled_from`]). A key the content
-/// omits falls back to the shadow-utils default: `SYS_UID_MIN` 100 and
-/// `SYS_GID_MIN` 100 — while an omitted `SYS_UID_MAX` derives from the
-/// regular floor (`UID_MIN`, itself defaulting to 1000) minus one, and
-/// an omitted `SYS_GID_MAX` from `GID_MIN` minus one: the 999 ceiling
-/// only holds where the regular floor is the 1000 default, and a host
-/// that customizes `UID_MIN` to 2000 allocates system accounts up to
-/// 1999, which the guard must keep. Hosts that carry no range keys
-/// still keep system accounts. A present key that names no parsable
-/// number — or a floor above its ceiling — still parses as no range,
-/// which fails closed downstream.
+/// (see [`super::holders::usergroups_enabled_from`]). An omitted key
+/// falls back to shadow-utils: 100 per system floor, each ceiling from
+/// its regular floor minus one. A present but unparsable key — or a
+/// floor above its ceiling — is no range, which fails closed downstream.
 pub(super) fn system_id_ranges_from(content: &str) -> Option<SystemRanges> {
     fn value(content: &str, key: &str, default: u64) -> Option<u64> {
         let mut found = None;
