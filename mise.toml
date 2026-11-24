@@ -3,7 +3,7 @@ min_version = { hard = "2026.11.1", soft = "2026.11.4" }
 [tools]
 # Operator repository standard. rust-toolchain.toml mirrors this rust
 # entry exactly; generated CI reads every version in this table.
-mr-boxington = { version = "1.30.0", workflow = "release.yml@refs/heads/main" }
+mr-boxington = { version = "v1.31.0", workflow = "release.yml@refs/heads/main" }
 # Targets: the standard's gnu pair plus x86_64-unknown-linux-musl, because
 # the ruxel-agent binary pushed to servers must be static.
 rust = { version = "1.100.0", profile = "minimal", components = [
