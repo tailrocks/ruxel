@@ -6,7 +6,7 @@
 # that: runner = "ubuntu-26.04" with hosted = true. Fork pull requests
 # run it on fork_runner like every other job.
 #
-# Gate note: this workflow has its own jobs outside rust-ci.yml, so the
+# Gate note: this workflow has its own jobs outside ci.yml, so the
 # Required gate does not wait for it. The branch ruleset (protect-main)
 # requires the "Acceptance local" check context alongside Required, so
 # merging keeps the pre-#120 blocking behavior.
