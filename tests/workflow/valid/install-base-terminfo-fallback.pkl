@@ -14,9 +14,10 @@ stages { new Stage { title = "Terminfo"; hosts = inventory.workers; steps {
       if infocmp xterm-ghostty >/dev/null 2>&1; then
         exit 0
       fi
-      infocmp -x xterm-256color | awk 'NR==1 { sub(/^xterm-256color\\|/, "xterm-ghostty|"); } { print }' > /tmp/xterm-ghostty.terminfo
-      tic -x /tmp/xterm-ghostty.terminfo
-      rm -f /tmp/xterm-ghostty.terminfo
+      src=$(mktemp /tmp/xterm-ghostty.terminfo.XXXXXX)
+      infocmp -x xterm-256color | awk '{ sub(/^xterm-256color\\|/, "xterm-ghostty|"); } { print }' > "$src"
+      tic -x -o /usr/share/terminfo "$src"
+      rm -f "$src"
       """
     creates = "/usr/share/terminfo/x/xterm-ghostty"
   }

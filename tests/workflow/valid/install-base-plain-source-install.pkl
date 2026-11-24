@@ -13,8 +13,7 @@ local key = new Script {
   bash = """
     install -m 0755 -d /etc/apt/keyrings
     if [ ! -f /etc/apt/keyrings/holla.gpg ]; then
-      curl -fsSL https://holla.example.test/holla.gpg | tee /etc/apt/keyrings/holla.gpg > /dev/null
-      echo "installed"
+      curl -fsSL --remove-on-error -o /etc/apt/keyrings/holla.gpg https://holla.example.test/holla.gpg && echo "installed"
     else
       echo "exists"
     fi
