@@ -23,7 +23,7 @@ local hookSteps = new Mapping<String, Step> {
 }
 
 // Generated CI is written by velnor-gen from .velnor/rust-ci.toml. `velnor-gen
-// check` exits 1 when .github/workflows/rust-ci.yml or .velnor/rust-metadata.json
+// check` exits 1 when .github/workflows/ci.yml or .velnor/rust-metadata.json
 // differs from what `velnor-gen generate` would write. CI runs the same task
 // (`check-generated-workflows`), so a bypassed hook is caught server-side.
 local generatedWorkflows = new Step {
