@@ -409,6 +409,16 @@
               "requires_features": false
             },
             {
+              "name": "workflow_apt_repository_install",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-config/tests/workflow_apt_repository_install.rs",
+              "requires_features": false
+            },
+            {
               "name": "workflow_copy",
               "kinds": [
                 "test"
