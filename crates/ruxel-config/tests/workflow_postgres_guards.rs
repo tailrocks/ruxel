@@ -241,7 +241,7 @@ fn overlong_names_are_refused() -> Result {
         ),
         (
             "postgres-pg-hba-long-user.pkl",
-            "is 64 characters; PostgreSQL truncates identifiers past 63 bytes",
+            "(64 characters); PostgreSQL truncates identifiers past 63 bytes",
         ),
     ] {
         let path = root().join("invalid").join(file);
@@ -295,6 +295,27 @@ fn an_unset_table_schema_is_the_public_schema() -> Result {
 #[test]
 fn default_privileges_without_targets_ride_the_login_role() -> Result {
     let config = valid("postgres-default-privs-login-target.pkl")?;
+    let all = tasks(&config);
+    assert_eq!(all.len(), 2, "{all:?}");
+    Ok(())
+}
+
+/// An implied default-privilege target is the login role, so the same grant
+/// with the target stated and implied is one declaration, not a conflict.
+#[test]
+fn default_privileges_with_stated_and_implied_targets_merge() -> Result {
+    let config = valid("postgres-default-privs-implicit-target.pkl")?;
+    let all = tasks(&config);
+    assert_eq!(all.len(), 1, "{all:?}");
+    Ok(())
+}
+
+/// A long `pg_hba` column of short names stays admitted: PostgreSQL truncates
+/// identifiers, not columns, so each comma-separated member is checked
+/// alone.
+#[test]
+fn a_long_pg_hba_list_of_short_names_is_admitted() -> Result {
+    let config = valid("postgres-pg-hba-long-list.pkl")?;
     let all = tasks(&config);
     assert_eq!(all.len(), 2, "{all:?}");
     Ok(())

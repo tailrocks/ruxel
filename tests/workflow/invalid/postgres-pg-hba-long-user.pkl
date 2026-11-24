@@ -1,6 +1,6 @@
 // An access-file username past PostgreSQL's 63-byte identifier limit
 // would render a line the reload reads truncated.
-// expect: pg_hba user "0123456789012345678901234567890123456789012345678901234567890123" is 64 characters; PostgreSQL truncates identifiers past 63 bytes
+// expect: pg_hba user "0123456789012345678901234567890123456789012345678901234567890123" names "0123456789012345678901234567890123456789012345678901234567890123" (64 characters); PostgreSQL truncates identifiers past 63 bytes
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Postgres.pkl" as postgres
 import "../inventory.pkl"

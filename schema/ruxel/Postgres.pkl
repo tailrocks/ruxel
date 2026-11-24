@@ -292,20 +292,30 @@ const local validMethods = List("trust", "reject", "md5", "password", "scram-sha
 const local function hasBlank(_text: String): Boolean =
   List(" ", "\t", "\n", "\r", "\u{b}", "\u{c}").any((c) -> _text.contains(c))
 
+/// The problem of a comma-separated pg_hba column that names an identifier
+/// past PostgreSQL's 63-byte limit, if it does: PostgreSQL truncates
+/// identifiers, not columns, so each name is checked alone and a long list
+/// of short names stays admitted. Columns carry no whitespace (refused
+/// above), so members need no trimming.
+function longMemberProblem(_kind: String, _column: String): List<String> =
+  let (long = _column.split(",").filter((member) -> member.length > 63))
+  if (long.isEmpty) List()
+  else List("pg_hba \(_kind) \"\(_column)\" names \"\(long.first)\" (\(long.first.length) characters); PostgreSQL truncates identifiers past 63 bytes, so name it shorter")
+
 /// The problems of the rule the file carries, if any: its columns checked
 /// the way the type constraints cannot — pklr does not check the elements
 /// of the listing the caller passes, so the render checks every rule
 /// itself, with a sentence that names the rule. Pure, so the lowering can
 /// check a file built any other way with the same sentences.
 function ruleProblems(_rule: PgHbaRule): List<String> =
+  let (longDb = longMemberProblem("database", _rule.database))
+  let (longUser = if (isStatic(_rule.user)) longMemberProblem("user", staticText(_rule.user)) else List())
   if (_rule.database.isEmpty || hasBlank(_rule.database))
     List("pg_hba database \"\(staticText(_rule.database))\" is empty or carries whitespace; a column holds one comma-separated list and no line break")
   else if (isStatic(_rule.user) && (staticText(_rule.user).isEmpty || hasBlank(staticText(_rule.user))))
     List("pg_hba user \"\(staticText(_rule.user))\" is empty or carries whitespace; a column holds one comma-separated list and no line break")
-  else if (_rule.database.length > 63)
-    List("pg_hba database \"\(staticText(_rule.database))\" is \(_rule.database.length) characters; PostgreSQL truncates identifiers past 63 bytes, so name it shorter")
-  else if (isStatic(_rule.user) && staticText(_rule.user).length > 63)
-    List("pg_hba user \"\(staticText(_rule.user))\" is \(staticText(_rule.user).length) characters; PostgreSQL truncates identifiers past 63 bytes, so name it shorter")
+  else if (!longDb.isEmpty) longDb
+  else if (!longUser.isEmpty) longUser
   else if (_rule.method.isEmpty || hasBlank(_rule.method))
     List("pg_hba method \"\(staticText(_rule.method))\" is empty or carries whitespace; a column holds one method and no line break")
   else if (!validMethods.contains(_rule.method))
