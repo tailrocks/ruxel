@@ -23,3 +23,4 @@ mod hold;
 mod maintenance;
 mod pins;
 mod process;
+mod self_repo;

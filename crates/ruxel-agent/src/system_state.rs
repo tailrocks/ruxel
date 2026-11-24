@@ -27,6 +27,15 @@ pub(crate) struct SystemState {
     /// Task environment the cached candidates were observed with.
     candidate_environment: Vec<(String, String)>,
     native_architecture: Option<String>,
+    /// A check-mode write that would change the apt candidate policy:
+    /// a copy skipped under the preference or source paths publishes
+    /// candidates the host still lacks, so a later plan of the same run
+    /// reports the install those candidates would satisfy as pending
+    /// instead of refusing the package as unavailable. A real write or
+    /// refresh supersedes the prediction, so both invalidations clear
+    /// it; an agent process is either check or apply for its whole run,
+    /// so apply never observes it.
+    predicted_policy: bool,
     #[cfg(test)]
     package_builds: usize,
     /// Synthetic amd64 dpkg status database that replaces the host's.
@@ -103,6 +112,18 @@ impl SystemState {
     #[cfg(test)]
     pub(crate) fn test_units_invalidated(&self) -> bool {
         self.units.is_none()
+    }
+
+    /// Records a check-mode write that would change the apt candidate
+    /// policy, so a later plan of the same run judges against the
+    /// candidates the apply will publish.
+    pub(crate) fn predict_policy_change(&mut self) {
+        self.predicted_policy = true;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_policy_predicted(&self) -> bool {
+        self.predicted_policy
     }
 
     pub(crate) fn unit(&mut self, name: &str) -> Result<UnitState, String> {

@@ -1,9 +1,8 @@
 // The install-base repository shape: a signed repository refreshes the
-// index through an ordinary index step ordered after it. No install
-// follows here: an install that plans against the candidates a
-// workflow-written repository would only publish at apply time waits on
-// the apt track, so the repository stage of the workflow holds the
-// repository and the index only.
+// index through an ordinary index step ordered after it. An install
+// ordered after that refresh plans against the published candidates
+// (`install-base-repository-install.pkl`); with no install here the
+// stage holds the repository and the index only.
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"

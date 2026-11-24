@@ -80,6 +80,112 @@ fn policy_reads(log: &std::path::Path) -> usize {
         .count()
 }
 
+/// A check-mode write under the apt policy paths predicts the refresh
+/// the run orders next instead of dropping the cached policy, so the
+/// later plan reports a pending install; a real write publishes the
+/// policy and predicts nothing, and a write elsewhere predicts nothing
+/// either.
+#[test]
+fn a_check_mode_policy_write_predicts_the_pending_refresh() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let root = std::env::temp_dir().join(format!("ruxel-apt-predict-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let program = root.join("apt-cache");
+    for directory in ["etc/apt/preferences.d", "etc/apt/sources.list.d"] {
+        std::fs::create_dir_all(root.join(directory)).expect("fixture directories");
+    }
+    std::fs::write(
+        &program,
+        "#!/bin/sh\nprintf 'pkg:\\n  Candidate: 1\\n     1 500\\n'\n",
+    )
+    .expect("fixture apt-cache");
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).expect("executable");
+    let database = Arc::new(Mutex::new(
+        "Package: pkg\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1\n\n"
+            .to_owned(),
+    ));
+    let mut state = SystemState::with_dpkg_status(database).with_apt_cache(program);
+    let planned = super::apt::run(
+        &json!({"name": "pkg", "state": "latest"}),
+        &context(false),
+        &mut state,
+    )
+    .expect("warm plan");
+    assert_eq!(planned["failed"], false);
+    assert!(
+        !state.test_candidates_invalidated(),
+        "the warm plan must cache the policy"
+    );
+    // A check-mode write publishes nothing, so the cached policy stays
+    // and the staged change is predicted instead.
+    let staged = super::copy::run_in(
+        &json!({"dest": root.join("etc/apt/sources.list.d/pgdg.sources"), "content": "x"}),
+        None,
+        &context(true),
+        &mut state,
+        &root.join("etc/apt"),
+    )
+    .expect("staged write");
+    assert_eq!(staged["changed"], true);
+    assert!(
+        state.test_policy_predicted(),
+        "the staged write must predict the refresh"
+    );
+    assert!(
+        !state.test_candidates_invalidated(),
+        "check must not drop the cached policy"
+    );
+    // A write elsewhere predicts nothing.
+    let mut plain = SystemState::with_test_packages();
+    let copied = super::copy::run_in(
+        &json!({"dest": root.join("etc/hosts"), "content": "x"}),
+        None,
+        &context(true),
+        &mut plain,
+        &root.join("etc/apt"),
+    )
+    .expect("plain write");
+    assert_eq!(copied["changed"], true);
+    assert!(
+        !plain.test_policy_predicted(),
+        "a write elsewhere predicts nothing"
+    );
+    std::fs::remove_dir_all(&root).expect("cleanup");
+}
+
+/// A real policy write publishes what the prediction only anticipated:
+/// the cached candidates go and the prediction goes with them, so a
+/// later plan re-reads the published policy instead of trusting the
+/// staged one.
+#[test]
+fn a_real_policy_write_supersedes_the_prediction() {
+    let root = std::env::temp_dir().join(format!("ruxel-apt-supersede-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("etc/apt/sources.list.d")).expect("fixture directories");
+    let database = Arc::new(Mutex::new(String::new()));
+    let mut state = SystemState::with_dpkg_status(database);
+    state.predict_policy_change();
+    assert!(state.test_policy_predicted());
+    let copied = super::copy::run_in(
+        &json!({"dest": root.join("etc/apt/sources.list.d/pgdg.sources"), "content": "x"}),
+        None,
+        &context(false),
+        &mut state,
+        &root.join("etc/apt"),
+    )
+    .expect("real write");
+    assert_eq!(copied["changed"], true);
+    assert!(
+        state.test_candidates_invalidated(),
+        "the write must drop the policy"
+    );
+    assert!(
+        !state.test_policy_predicted(),
+        "the write supersedes the prediction"
+    );
+    std::fs::remove_dir_all(&root).expect("cleanup");
+}
+
 /// A write that lands under the apt policy paths drops the cached
 /// candidate policy, so the next package plan re-reads `apt-cache policy`
 /// instead of deciding from the candidate chosen before the write. The

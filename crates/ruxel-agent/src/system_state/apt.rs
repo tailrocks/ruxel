@@ -59,19 +59,30 @@ impl SystemState {
             let policy = self.candidates.get(&self.policy_header(request));
             let satisfied = match (installed, request.version()) {
                 (None, _) => {
-                    Self::require_available(request, policy)?;
+                    Self::require_available(request, policy, self.predicted_policy)?;
                     false
                 }
                 (Some(installed), Some(version)) => apt_version::equal(installed, version),
-                (Some(installed), None) if latest => {
-                    let policy = policy.ok_or_else(|| {
-                        format!("apt: no policy candidate for {:?}", request.selector())
-                    })?;
-                    policy
+                (Some(installed), None) if latest => match policy {
+                    Some(policy) => policy
                         .candidate
                         .as_deref()
-                        .is_none_or(|candidate| apt_version::equal(candidate, installed))
-                }
+                        .is_none_or(|candidate| apt_version::equal(candidate, installed)),
+                    // No candidate policy at all: only the predicted
+                    // refresh can publish one, so the upgrade is pending,
+                    // not refused for having nothing to plan against.
+                    None if self.predicted_policy => {
+                        plan.missing.push(request.to_string());
+                        plan.transaction.push(request.to_string());
+                        continue;
+                    }
+                    None => {
+                        return Err(format!(
+                            "apt: no policy candidate for {:?}",
+                            request.selector()
+                        ));
+                    }
+                },
                 (Some(_), None) => true,
             };
             if satisfied {
@@ -88,9 +99,16 @@ impl SystemState {
     /// A missing request must name a package with its own installable
     /// version: the requested one, or a default candidate when unpinned.
     /// Virtual packages have neither.
+    ///
+    /// When a check-mode write staged a repository the host still lacks,
+    /// the refresh the run orders next publishes the candidate apply
+    /// installs from: the request is pending that refresh, so the plan
+    /// admits it instead of refusing a package the published policy
+    /// would satisfy.
     fn require_available(
         request: &PackageRequest,
         policy: Option<&PolicyEntry>,
+        predicted_policy: bool,
     ) -> Result<(), String> {
         let available = policy.is_some_and(|policy| match request.version() {
             Some(version) => policy
@@ -99,7 +117,7 @@ impl SystemState {
                 .any(|candidate| apt_version::equal(candidate, version)),
             None => policy.candidate.is_some(),
         });
-        if available {
+        if available || predicted_policy {
             Ok(())
         } else {
             Err(format!(
@@ -134,14 +152,18 @@ impl SystemState {
     pub(crate) fn invalidate_packages(&mut self) {
         self.packages = None;
         self.candidates.clear();
+        self.predicted_policy = false;
     }
 
     /// The cached apt candidate policy. A write under the apt preference
     /// or source paths changes which version apt would choose without
     /// changing what is installed, so exactly the policy cache is
-    /// dropped and the next plan re-reads it.
+    /// dropped and the next plan re-reads it. The write publishes the
+    /// policy the prediction only anticipated, so the prediction goes
+    /// with the cache.
     pub(crate) fn invalidate_candidates(&mut self) {
         self.candidates.clear();
+        self.predicted_policy = false;
     }
 
     /// The host's native architecture, known once the package snapshot is

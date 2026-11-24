@@ -1,0 +1,19 @@
+// expect: 'Add the late repo' (step 3) writes an apt repository, and 'Install nginx' (step 4) plans against the candidate policy
+// The refresh covers only the repositories ordered before it: a second
+// repository after the index publishes candidates no refresh fetched, so
+// the install after it still plans against the candidates the host has
+// and is refused like a repository with no refresh at all.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptRepository { title = "Add the repo"; name = "x"; url = "https://example.test"; suite = "stable"; components { "main" }; signingKey = key }
+  new debian.AptPackageIndex { title = "Refresh the index" }
+  new debian.AptRepository { title = "Add the late repo"; name = "y"; url = "https://example.test"; suite = "stable"; components { "main" }; signingKey = key }
+  new debian.AptPackages { title = "Install nginx"; names { "nginx" }; latest = true }
+} } }
+
+name = "invalid/apt-repository-install-after-late-repository.pkl"
