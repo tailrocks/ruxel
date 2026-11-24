@@ -74,12 +74,13 @@ stages {
   new Symlink { path = "/usr/local/bin/bat"; target = "/usr/bin/batcat" }
   } }
   new Stage { title = "Shell"; hosts = new Listing { base }; steps {
-  // The unattended installer writes /root/.oh-my-zsh once; the guard
-  // skips it once the directory is there, so a second apply does not
-  // reinstall.
+  // The playbook downloads the installer and pipes it to sh; the catalogue
+  // has no download step, so one shell step does both, run under the
+  // pipefail wrapper so a failed download fails the step instead of
+  // executing an empty script. The guard makes a second apply a no-change.
   new Script {
     title = "Install Oh My Zsh"
-    bash = "sh -c \"$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended\n"
+    bash = "curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | sh -s -- \"\" --unattended\n"
     creates = "/root/.oh-my-zsh"
   }
   // BLOCKED on Track A: the playbook tracks zsh-autosuggestions at
@@ -122,7 +123,7 @@ stages {
   // ordered steps.
   new Command {
     title = "Download the Nushell GPG key"
-    run { "curl"; "-fsSL"; "-o"; "/etc/apt/trusted.gpg.d/fury-nushell.asc"; "https://apt.fury.io/nushell/gpg.key" }
+    run { "curl"; "-fsSL"; "--remove-on-error"; "-o"; "/etc/apt/trusted.gpg.d/fury-nushell.asc"; "https://apt.fury.io/nushell/gpg.key" }
     creates = "/etc/apt/trusted.gpg.d/fury-nushell.asc"
   }
   new File {
