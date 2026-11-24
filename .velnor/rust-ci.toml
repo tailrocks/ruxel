@@ -1,4 +1,4 @@
-# velnor-gen input. `velnor-gen generate` writes .github/workflows/rust-ci.yml
+# velnor-gen input. `velnor-gen generate` writes .github/workflows/ci.yml
 # (plus rust-cache-trim.yml) and .velnor/rust-metadata.json from this file;
 # `velnor-gen check` (mise task check-generated-workflows, hk hook, CI job)
 # fails on drift. Full reference: generator/CONFIG.md in tailrocks/velnor-new.

@@ -189,9 +189,9 @@ backend = "cargo:cargo-deny"
 specifiers = ["0.22.0"]
 
 [[tools."cargo:https://github.com/tailrocks/velnor-new"]]
-version = "rev:146a9960b0b41adf6612462d28982bff2c60a1c6"
+version = "rev:1c5a9d9accbb9d8d3beb8431a42e291dda915f5d"
 backend = "cargo:https://github.com/tailrocks/velnor-new"
-specifiers = ["rev:146a9960b0b41adf6612462d28982bff2c60a1c6"]
+specifiers = ["rev:1c5a9d9accbb9d8d3beb8431a42e291dda915f5d"]
 
 [tools."cargo:https://github.com/tailrocks/velnor-new".options]
 crate = "velnor-gen"
@@ -291,35 +291,35 @@ url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-m
 url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752026034"
 
 [[tools."github:tailrocks/velnor-new"]]
-version = "tools-v0.1.111"
+version = "tools-v0.1.112"
 backend = "github:tailrocks/velnor-new"
-specifiers = ["tools-v0.1.111"]
+specifiers = ["tools-v0.1.112"]
 
 [tools."github:tailrocks/velnor-new".options]
 matching = "velnor-gen"
 
 [tools."github:tailrocks/velnor-new"."platforms.linux-arm64"]
-checksum = "sha256:3fc853061764dde7509c70ad3fd3eed8326edd68baf14002080da6ad5f523384"
-url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.111/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/775424483"
+checksum = "sha256:00888ed251fb377ed6d3bd47ab32dbeb06630f96123c4ef9a5e274685a9629f9"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.112/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/785146605"
 provenance = "github-attestations"
 
 [tools."github:tailrocks/velnor-new"."platforms.linux-arm64-musl"]
-checksum = "sha256:3fc853061764dde7509c70ad3fd3eed8326edd68baf14002080da6ad5f523384"
-url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.111/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/775424483"
+checksum = "sha256:00888ed251fb377ed6d3bd47ab32dbeb06630f96123c4ef9a5e274685a9629f9"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.112/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/785146605"
 provenance = "github-attestations"
 
 [tools."github:tailrocks/velnor-new"."platforms.linux-x64"]
-checksum = "sha256:933695ac11db7ba5feba98d10e63a12d5fc2e9e34b27130b2612c2b410519e08"
-url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.111/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/775424527"
+checksum = "sha256:69fdcdf00d649c1696e0fbfc7c1c855647562f22fc295e44de26bb1d5fefc848"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.112/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/785146631"
 provenance = "github-attestations"
 
 [tools."github:tailrocks/velnor-new"."platforms.linux-x64-musl"]
-checksum = "sha256:933695ac11db7ba5feba98d10e63a12d5fc2e9e34b27130b2612c2b410519e08"
-url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.111/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/775424527"
+checksum = "sha256:69fdcdf00d649c1696e0fbfc7c1c855647562f22fc295e44de26bb1d5fefc848"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.112/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/785146631"
 provenance = "github-attestations"
 
 [[tools.gitleaks]]
@@ -499,50 +499,6 @@ checksum = "sha256:2d709445957ea5dae95d51379aa9e7e575cfedb12c0d5731de4761a697262
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.30.0/mbx-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 repository_ids = { repository = "1340721957" }
-
-[[tools.pkl]]
-version = "0.33.0"
-backend = "aqua:apple/pkl"
-specifiers = ["0.33.0"]
-
-[tools.pkl."platforms.linux-arm64"]
-checksum = "sha256:edcea361402ecab0f3a93f86b1a896c41d00a9241f4962f70278254b08fbd26d"
-checksum_source = "mise-versions"
-url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-aarch64"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756970"
-
-[tools.pkl."platforms.linux-x64"]
-checksum = "sha256:b9a6ddea6b382b7d4db4cf78e77aa3858e0c8a7e02939d2ba298574b5d1fcc69"
-checksum_source = "mise-versions"
-url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756975"
-
-# linux-arm64-musl carries no entry on purpose: apple/pkl 0.33.0 ships
-# no alpine aarch64 asset (pkl-alpine-linux-aarch64 does not exist;
-# only pkl-alpine-linux-amd64 does), and pkl-linux-aarch64 is a glibc
-# binary that cannot run on a musl host, so no musl-compatible aarch64
-# artifact can be pinned. `mise lock` resolves the absent slot back to
-# the glibc asset, so the slot stays hand-removed like the linux-x64-musl
-# alpine correction above; tools/verify-pkl-artifact refuses the
-# platform with its unsupported result before any lookup instead.
-
-[tools.pkl."platforms.linux-x64-musl"]
-checksum = "sha256:38e983b0953018888761c8b410ccdc6f27ce77407ad306e73e6369c07bc23d1f"
-checksum_source = "mise-versions"
-url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-alpine-linux-amd64"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756974"
-
-[tools.pkl."platforms.macos-arm64"]
-checksum = "sha256:e39c157df0f00a35d34b46270a768784edcaf509aafbf743849b27b4c83ef83b"
-checksum_source = "mise-versions"
-url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-macos-aarch64"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714757040"
-
-[tools.pkl."platforms.windows-x64"]
-checksum = "sha256:9875af0d17d3535ed0e3903f3ae71fc8007268949328f73c2d12942fca11840c"
-checksum_source = "mise-versions"
-url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-windows-amd64.exe"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714757051"
 
 [[tools.rumdl]]
 version = "v0.3.5"
