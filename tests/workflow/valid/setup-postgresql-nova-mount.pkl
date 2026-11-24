@@ -8,7 +8,7 @@ import "../inventory.pkl"
 
 local uuid = new Capture {
   title = "Learn the UUID of the data volume"
-  bash = "blkid -s UUID -o value /dev/data/data"
+  bash = "uuid=$(blkid -s UUID -o value /dev/data/data); printf 'UUID=%s' \"$uuid\""
 }
 
 local dataMount = new storage.Mount {
