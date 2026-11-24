@@ -1,0 +1,37 @@
+// Phase 3 PostgreSQL proof, part 1: the storage-nova drives+mount plays
+// adapted from tests/workflow/valid/storage-nova-drives.pkl and
+// tests/workflow/valid/storage-nova-mount.pkl to the disposable host's loop
+// devices. Three 2G images (/srv/disk1..3.img) are attached as /dev/loop0..2
+// with /dev/disk/by-id/ruxel-proof-disk-{1,2,3} symlinks, exactly as the
+// earlier storage proof did. The volume group is named `data` (not the
+// corpus fixture's `ruxel_nova`) because workflows/setup-postgresql-nova.pkl
+// hardcodes the real nova identity /dev/data/data in its blkid capture; the
+// mount lands at /var/lib/postgresql with the corpus options so the setup
+// workflow's own mount declaration converges on the same state.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "./inventory.pkl"
+
+local disks = new Capture { title = "Resolve proof disks"; bash = "readlink -e /dev/disk/by-id/ruxel-proof-disk-1 /dev/disk/by-id/ruxel-proof-disk-2 /dev/disk/by-id/ruxel-proof-disk-3" }
+local uuid = new Capture { title = "Read the data volume UUID"; bash = "uuid=$(blkid -s UUID -o value /dev/data/data); printf 'UUID=%s' \"$uuid\"" }
+
+name = "proof/storage.pkl"
+
+stages {
+  new Stage { title = "proof disks"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Install the storage tools"; names { "lvm2"; "xfsprogs" } }
+    disks
+    new storage.VolumeGroup { title = "Create the data volume group"; vg = "data"; devices {
+      "/dev/disk/by-id/ruxel-proof-disk-1";
+      "/dev/disk/by-id/ruxel-proof-disk-2";
+      "/dev/disk/by-id/ruxel-proof-disk-3"
+    } }
+    new storage.LogicalVolume { title = "Create the data logical volume"; vg = "data"; lv = "data" }
+    new storage.Filesystem { title = "Format the data volume"; dev = "/dev/data/data" }
+  } }
+  new Stage { title = "proof mount"; hosts = inventory.workers; steps {
+    uuid
+    new storage.Mount { title = "Mount the data volume"; src = uuid.stdout(); path = "/var/lib/postgresql"; fstype = "xfs"; opts = "logbufs=8,noatime,inode64,allocsize=16m,logbsize=256k" }
+  } }
+}

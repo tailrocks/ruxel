@@ -1,0 +1,8 @@
+// Proof inventory: the disposable OrbStack VM (ruxel-proof, Debian 13
+// aarch64, 192.168.139.120 verified via `orbctl list`). Reached over SSH
+// as root on port 22 with the orb ed25519 key.
+extends "modulepath:/ruxel/Core.pkl"
+
+proof1: Host = new Host { name = "proof-1"; address = "192.168.139.120" }
+
+workers: Listing<Host> = new { proof1 }
