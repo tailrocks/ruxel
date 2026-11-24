@@ -1,0 +1,34 @@
+// The nova mount in the catalogue language: a blkid capture learns the
+// UUID of the formatted volume on the host, and the mount carries its
+// stdout as the source, so the UUID is learned and used in the same run
+// with the playbook's mount options.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+local uuid = new Capture {
+  title = "Learn the UUID of the data volume"
+  bash = "uuid=$(blkid -s UUID -o value /dev/data/data); printf 'UUID=%s' \"$uuid\""
+}
+
+local dataMount = new storage.Mount {
+  path = "/var/lib/postgresql"
+  src = uuid.stdout()
+  fstype = "xfs"
+  opts = "logbufs=8,noatime,inode64,allocsize=16m,logbsize=256k"
+}
+
+stages { new Stage { title = "Nova mount"; hosts = inventory.workers; steps {
+  uuid
+  dataMount
+  // The mounted tree belongs to postgres: the command runs only when the
+  // mount changed, so the first apply fixes ownership and the second is a
+  // no-change.
+  new Command {
+    title = "Give the data volume to postgres"
+    run { "chown"; "-R"; "postgres:postgres"; "/var/lib/postgresql" }
+    onChangeOf { dataMount }
+  }
+} } }
+
+name = "valid/setup-postgresql-nova-mount.pkl"

@@ -1,0 +1,31 @@
+// The nova service composition: the systemd drop-in and the two files
+// the service reads, the daemon reload ordered after the drop-in, and
+// the running service that reloads — never restarts — when either file
+// changes.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+local pgConf = new File { path = "/etc/postgresql/19/main/postgresql.conf"; content = "port = 40000\n"; mode = "0644"; owner = "postgres"; group = "postgres" }
+local pgHba = new File { path = "/etc/postgresql/19/main/pg_hba.conf"; content = "# TYPE  DATABASE  USER  ADDRESS  METHOD\n"; mode = "0640"; owner = "postgres"; group = "postgres" }
+local dropin = new File {
+  path = "/etc/systemd/system/postgresql@.service.d/override.conf"
+  content = "[Service]\nLimitNOFILE=1048576\n"
+  mode = "0644"
+}
+
+stages { new Stage { title = "Nova service"; hosts = inventory.workers; steps {
+  new Directory { path = "/etc/systemd/system/postgresql@.service.d"; mode = "0755" }
+  dropin
+  new Command { title = "Reload systemd for the PostgreSQL drop-in"; run { "systemctl"; "daemon-reload" }; onChangeOf { dropin }; changes = "never" }
+  pgConf
+  pgHba
+  new systemd.Service {
+    name = "postgresql@19-main"
+    enabled = true
+    running = true
+    reloadOnChangeOf { pgConf; pgHba }
+  }
+} } }
+
+name = "valid/setup-postgresql-nova-service-dropin.pkl"

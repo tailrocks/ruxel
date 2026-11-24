@@ -1,0 +1,28 @@
+// The nova multixact composition: the monitor script (an executable
+// `File`), the `.service` unit file the timer starts, the daemon-reload
+// `Command` ordered after the unit file, and the `.timer` itself —
+// enabled, so it fires 2 minutes past boot and every 5 minutes after its
+// last firing. The steps run as the SSH user, which is root here, so no
+// step names another account.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+local script = new File { path = "/usr/local/sbin/chainargos-postgresql-multixact-monitor"; content = "#!/usr/bin/env bash\nset -Eeuo pipefail\n"; mode = "0755"; owner = "root"; group = "root" }
+local unit = new File { path = "/etc/systemd/system/chainargos-postgresql-multixact-monitor.service"; content = "[Unit]\nDescription=Check PostgreSQL MultiXact\n"; mode = "0644"; owner = "root"; group = "root" }
+local monitor = new systemd.SystemdTimer {
+  name = "chainargos-postgresql-multixact-monitor"
+  service = "chainargos-postgresql-multixact-monitor"
+  onBoot = 2.min
+  repeat = 5.min
+  enabled = true
+}
+
+stages { new Stage { title = "Nova monitor"; hosts = inventory.workers; steps {
+  script
+  unit
+  new Command { title = "Reload systemd for the monitor units"; run { "systemctl"; "daemon-reload" }; onChangeOf { unit }; changes = "never" }
+  monitor
+} } }
+
+name = "valid/setup-postgresql-nova-multixact-timer.pkl"

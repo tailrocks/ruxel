@@ -1,0 +1,18 @@
+// The nova sysctl set: the four kernel parameters of the PostgreSQL
+// play in the files the play uses. The swappiness entry lives in the
+// default file; the overcommit pair shares one file, and the hugepages
+// entry has its own. The port keeps the playbook's effective
+// overcommit value of 1, not the 2 the playbook writes before
+// overwriting it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "Nova sysctls"; hosts = inventory.workers; steps {
+  new linux.Sysctl { name = "vm.swappiness"; value = "0" }
+  new linux.Sysctl { name = "vm.overcommit_memory"; value = "1"; path = "/etc/sysctl.d/10-postgres-overcommit.conf" }
+  new linux.Sysctl { name = "vm.nr_hugepages"; value = "16384"; path = "/etc/sysctl.d/10-postgres-hugepages.conf" }
+  new linux.Sysctl { name = "vm.overcommit_ratio"; value = "100"; path = "/etc/sysctl.d/10-postgres-overcommit.conf" }
+} } }
+
+name = "valid/setup-postgresql-nova-sysctl.pkl"

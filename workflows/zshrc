@@ -1,0 +1,42 @@
+export ZSH="$HOME/.oh-my-zsh"
+
+# ZSH_THEME="" deliberately disables oh-my-zsh's prompt theme so Starship
+# (eval'd below) can own the prompt. A non-empty theme such as robbyrussell
+# also sets PROMPT, and the two prompt engines fighting over PROMPT/ZLE
+# desyncs the line editor's cursor-width tracking — typing shifts characters
+# forward and backspace stops deleting. Keep this empty whenever starship
+# init runs below.
+ZSH_THEME=""
+
+zstyle ':omz:update' mode auto
+
+# zsh-autosuggestions stays out until its checkout lands (BLOCKED on Track A
+# in install-base.pkl): loading a plugin with no checkout warns on every
+# interactive shell.
+plugins=(git)
+
+[ -f "$ZSH/oh-my-zsh.sh" ] && source "$ZSH/oh-my-zsh.sh"
+
+eval "$(starship init zsh)"
+command -v mise >/dev/null 2>&1 && eval "$(mise activate zsh)"
+command -v tirith >/dev/null 2>&1 && eval "$(tirith init --shell zsh)"
+command -v shellfirm >/dev/null 2>&1 && eval "$(shellfirm init zsh)"
+
+if command -v infocmp >/dev/null 2>&1 && [ "${TERM:-}" = "xterm-ghostty" ] && ! infocmp "$TERM" >/dev/null 2>&1; then
+  export TERM=xterm-256color
+fi
+
+# custom functions
+docker_clean_all() {
+  docker_stop_rm_all
+  docker rmi --force $(docker images -qa)
+  docker network rm $(docker network ls -q)
+  docker system prune --force
+  docker volume prune --force
+}
+
+docker_stop_rm_all() {
+  docker stop $(docker ps -qa)
+  docker rm $(docker ps -qa)
+}
+# @end custom functions
