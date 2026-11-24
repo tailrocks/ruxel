@@ -115,3 +115,27 @@ fn omitted_range_keys_fall_back_to_shadow_utils_defaults() {
         "one above the default gid ceiling is a login group"
     );
 }
+
+#[test]
+fn an_omitted_system_ceiling_comes_from_the_regular_floor() {
+    // The review's P1 on this PR: shadow-utils draws an omitted
+    // SYS_UID_MAX from UID_MIN - 1 (and SYS_GID_MAX from GID_MIN -
+    // 1), not from the 999 that only holds where the regular floor
+    // is the 1000 default. UID_MIN 2000 allocates system accounts
+    // up to 1999, which the guard keeps.
+    let ranges = super::super::system_id_ranges_from("UID_MIN 2000\nGID_MIN 2000\n")
+        .expect("the omitted ceilings derive from the regular floors");
+    assert_eq!((ranges.uid_min, ranges.uid_max), (100, 1999));
+    assert_eq!((ranges.gid_min, ranges.gid_max), (100, 1999));
+    assert!(super::super::system_uid_kept(1500, &ranges));
+    assert!(!super::super::system_uid_kept(2000, &ranges));
+    let _policy = super::super::pin_test_policy("UID_MIN 2000\nGID_MIN 2000\n");
+    let entry = |uid: u64| super::super::super::PasswdEntry {
+        uid,
+        ..super::super::super::PasswdEntry::default()
+    };
+    assert!(
+        super::super::removal_allowed("svc", None, Some(&entry(1500)), false).is_err(),
+        "a uid inside the derived system range is the host's to keep"
+    );
+}

@@ -43,7 +43,8 @@ pub(super) struct SystemRanges {
 /// unparsable key, or a floor above its ceiling — fails closed: the
 /// removal is refused instead of treating the number as a removable
 /// login account. A key the file omits falls back to the shadow-utils
-/// default (see [`system_id_ranges_from`]).
+/// default: an omitted system ceiling derives from the regular floor
+/// (see [`system_id_ranges_from`]).
 pub(super) fn system_id_ranges() -> Result<SystemRanges, String> {
     // The tests pin the host policy for the thread they run on, so a
     // removal is provable without the host's own file — including on
@@ -52,7 +53,7 @@ pub(super) fn system_id_ranges() -> Result<SystemRanges, String> {
     if let Some(content) = test_policy() {
         return system_id_ranges_from(&content).ok_or_else(|| {
             "cannot read the host's system-account range from /etc/login.defs: \
-             each present SYS_UID_MIN, SYS_UID_MAX, SYS_GID_MIN and SYS_GID_MAX key must name one number, with each floor at or below its ceiling"
+             each present SYS_UID_MIN, SYS_UID_MAX, SYS_GID_MIN, SYS_GID_MAX, UID_MIN and GID_MIN key must name one number, with each floor at or below its ceiling"
                 .to_string()
         });
     }
@@ -61,7 +62,7 @@ pub(super) fn system_id_ranges() -> Result<SystemRanges, String> {
     })?;
     system_id_ranges_from(&content).ok_or_else(|| {
         "cannot read the host's system-account range from /etc/login.defs: \
-         each present SYS_UID_MIN, SYS_UID_MAX, SYS_GID_MIN and SYS_GID_MAX key must name one number, with each floor at or below its ceiling"
+         each present SYS_UID_MIN, SYS_UID_MAX, SYS_GID_MIN, SYS_GID_MAX, UID_MIN and GID_MIN key must name one number, with each floor at or below its ceiling"
             .to_string()
     })
 }
@@ -110,11 +111,16 @@ fn test_policy() -> Option<String> {
 /// The canned-content counterpart of [`system_id_ranges`]: the last
 /// uncommented line per key wins — the way `USERGROUPS_ENAB` resolves
 /// (see [`super::holders::usergroups_enabled_from`]). A key the content
-/// omits falls back to the shadow-utils default (`SYS_UID_MIN` 100,
-/// `SYS_UID_MAX` 999, `SYS_GID_MIN` 100, `SYS_GID_MAX` 999): hosts that
-/// carry no range keys still keep system accounts. A present key that
-/// names no parsable number — or a floor above its ceiling — still
-/// parses as no range, which fails closed downstream.
+/// omits falls back to the shadow-utils default: `SYS_UID_MIN` 100 and
+/// `SYS_GID_MIN` 100 — while an omitted `SYS_UID_MAX` derives from the
+/// regular floor (`UID_MIN`, itself defaulting to 1000) minus one, and
+/// an omitted `SYS_GID_MAX` from `GID_MIN` minus one: the 999 ceiling
+/// only holds where the regular floor is the 1000 default, and a host
+/// that customizes `UID_MIN` to 2000 allocates system accounts up to
+/// 1999, which the guard must keep. Hosts that carry no range keys
+/// still keep system accounts. A present key that names no parsable
+/// number — or a floor above its ceiling — still parses as no range,
+/// which fails closed downstream.
 pub(super) fn system_id_ranges_from(content: &str) -> Option<SystemRanges> {
     fn value(content: &str, key: &str, default: u64) -> Option<u64> {
         let mut found = None;
@@ -130,11 +136,13 @@ pub(super) fn system_id_ranges_from(content: &str) -> Option<SystemRanges> {
         }
         Some(found.unwrap_or(default))
     }
+    let uid_floor = value(content, "UID_MIN", 1000)?;
+    let gid_floor = value(content, "GID_MIN", 1000)?;
     let ranges = SystemRanges {
         uid_min: value(content, "SYS_UID_MIN", 100)?,
-        uid_max: value(content, "SYS_UID_MAX", 999)?,
+        uid_max: value(content, "SYS_UID_MAX", uid_floor.saturating_sub(1))?,
         gid_min: value(content, "SYS_GID_MIN", 100)?,
-        gid_max: value(content, "SYS_GID_MAX", 999)?,
+        gid_max: value(content, "SYS_GID_MAX", gid_floor.saturating_sub(1))?,
     };
     (ranges.uid_min <= ranges.uid_max && ranges.gid_min <= ranges.gid_max).then_some(ranges)
 }
