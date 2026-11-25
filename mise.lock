@@ -184,9 +184,9 @@ url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/asset
 provenance = "github-attestations"
 
 [[tools."cargo:cargo-deny"]]
-version = "0.22.0"
+version = "0.22.1"
 backend = "cargo:cargo-deny"
-specifiers = ["0.22.0"]
+specifiers = ["0.22.1"]
 
 [[tools."cargo:https://github.com/tailrocks/velnor-new"]]
 version = "rev:1c5a9d9accbb9d8d3beb8431a42e291dda915f5d"
