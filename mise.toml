@@ -20,7 +20,7 @@ cargo-binstall = "1.28.0"
 # cargo-deny publishes no x86_64-apple-darwin asset, so on Intel macOS the
 # aqua prebuilt cannot resolve; that platform builds cargo-deny from crates.io
 # source (the `cargo:` backend) instead of failing `mise install --locked`.
-"aqua:EmbarkStudios/cargo-deny" = { version = "0.22.0", os = ["linux", "windows", "macos/arm64"] }
+"aqua:EmbarkStudios/cargo-deny" = { version = "0.22.1", os = ["linux", "windows", "macos/arm64"] }
 "cargo:cargo-deny" = { version = "0.22.1", os = ["macos/x64"] }
 "aqua:rust-cross/cargo-zigbuild" = "0.24.1"
 zig = "0.17.1"
