@@ -31,7 +31,7 @@ rumdl = "v0.3.6"
 # A cargo backend is refused here: the CI tools cache holds prebuilt
 # binaries only, so alint must publish one (as github:asamarts/alint does).
 "github:asamarts/alint" = "v0.23.0"
-jactionlint = "2.6.0"
+jactionlint = "v2.7.0"
 shellcheck = "0.11.0"
 # velnor-gen (tools release tag). velnor-gen refuses a tool that applies on the
 # runner OS without a prebuilt binary in mise.lock, and the release has no macOS
