@@ -14,7 +14,7 @@ rust = { version = "1.100.0", profile = "minimal", components = [
   "x86_64-unknown-linux-gnu",
   "x86_64-unknown-linux-musl",
 ], mr_boxington = true }
-cargo-binstall = "1.28.0"
+cargo-binstall = "1.29.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.151"
 "github:bnjbvr/cargo-machete" = "v0.10.1"
 # cargo-deny publishes no x86_64-apple-darwin asset, so on Intel macOS the
