@@ -189,9 +189,9 @@ backend = "cargo:cargo-deny"
 specifiers = ["0.22.1"]
 
 [[tools."cargo:https://github.com/tailrocks/velnor-new"]]
-version = "rev:1c5a9d9accbb9d8d3beb8431a42e291dda915f5d"
+version = "rev:5e3c38d6eca734106e0f2b0e677f9191be26c012"
 backend = "cargo:https://github.com/tailrocks/velnor-new"
-specifiers = ["rev:1c5a9d9accbb9d8d3beb8431a42e291dda915f5d"]
+specifiers = ["rev:5e3c38d6eca734106e0f2b0e677f9191be26c012"]
 
 [tools."cargo:https://github.com/tailrocks/velnor-new".options]
 crate = "velnor-gen"
@@ -291,35 +291,35 @@ url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-m
 url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752026034"
 
 [[tools."github:tailrocks/velnor-new"]]
-version = "tools-v0.1.112"
+version = "tools-v0.1.116"
 backend = "github:tailrocks/velnor-new"
-specifiers = ["tools-v0.1.112"]
+specifiers = ["tools-v0.1.116"]
 
 [tools."github:tailrocks/velnor-new".options]
 matching = "velnor-gen"
 
 [tools."github:tailrocks/velnor-new"."platforms.linux-arm64"]
-checksum = "sha256:00888ed251fb377ed6d3bd47ab32dbeb06630f96123c4ef9a5e274685a9629f9"
-url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.112/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/785146605"
+checksum = "sha256:87a91845f942e1170c6e26f0213bcdcd364280e03476c54e21cf08bfb89979d4"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.116/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/790583801"
 provenance = "github-attestations"
 
 [tools."github:tailrocks/velnor-new"."platforms.linux-arm64-musl"]
-checksum = "sha256:00888ed251fb377ed6d3bd47ab32dbeb06630f96123c4ef9a5e274685a9629f9"
-url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.112/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/785146605"
+checksum = "sha256:87a91845f942e1170c6e26f0213bcdcd364280e03476c54e21cf08bfb89979d4"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.116/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/790583801"
 provenance = "github-attestations"
 
 [tools."github:tailrocks/velnor-new"."platforms.linux-x64"]
-checksum = "sha256:69fdcdf00d649c1696e0fbfc7c1c855647562f22fc295e44de26bb1d5fefc848"
-url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.112/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/785146631"
+checksum = "sha256:debe92a8421c43f8141e394dc722d2f8678f037cebe0a050d865a22c8820a878"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.116/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/790583845"
 provenance = "github-attestations"
 
 [tools."github:tailrocks/velnor-new"."platforms.linux-x64-musl"]
-checksum = "sha256:69fdcdf00d649c1696e0fbfc7c1c855647562f22fc295e44de26bb1d5fefc848"
-url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.112/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/785146631"
+checksum = "sha256:debe92a8421c43f8141e394dc722d2f8678f037cebe0a050d865a22c8820a878"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.116/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/790583845"
 provenance = "github-attestations"
 
 [[tools.gitleaks]]
@@ -672,6 +672,7 @@ url = "https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz"
 [tools.zig."platforms.macos-arm64"]
 checksum = "sha256:75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d"
 url = "https://ziglang.org/download/0.17.1/zig-aarch64-macos-0.17.1.tar.xz"
+provenance = "minisign"
 
 [tools.zig."platforms.macos-x64"]
 checksum = "sha256:9af07b20319fbd0c92ee46ad23e81d6a782b1aaea2cfb8dcbff35f1d2c7ddbb7"

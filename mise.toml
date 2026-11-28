@@ -41,9 +41,9 @@ shellcheck = "0.11.0"
 # `asset_pattern`) keeps selection arch-aware: without it, lock resolution
 # picks one asset for every Linux platform and put the x86_64 build into the
 # linux-arm64 lock slot on fresh ARM setup.
-"cargo:https://github.com/tailrocks/velnor-new" = { version = "rev:1c5a9d9accbb9d8d3beb8431a42e291dda915f5d", crate = "velnor-gen", os = ["macos"] }
+"cargo:https://github.com/tailrocks/velnor-new" = { version = "rev:5e3c38d6eca734106e0f2b0e677f9191be26c012", crate = "velnor-gen", os = ["macos"] }
 
-"github:tailrocks/velnor-new" = { version = "tools-v0.1.112", os = ["linux"], matching = "velnor-gen" }
+"github:tailrocks/velnor-new" = { version = "tools-v0.1.116", os = ["linux"], matching = "velnor-gen" }
 
 [settings]
 cargo.binstall = true

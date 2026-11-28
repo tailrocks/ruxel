@@ -256,7 +256,12 @@
               "tests": true,
               "doctest": false,
               "source": "crates/ruxel-config/tests/dual_evaluator.rs",
-              "requires_features": true
+              "requires_features": true,
+              "required_features": [
+                {
+                  "name": "dual-evaluator"
+                }
+              ]
             },
             {
               "name": "dual_evaluator_systemd",
@@ -266,7 +271,12 @@
               "tests": true,
               "doctest": false,
               "source": "crates/ruxel-config/tests/dual_evaluator_systemd.rs",
-              "requires_features": true
+              "requires_features": true,
+              "required_features": [
+                {
+                  "name": "dual-evaluator"
+                }
+              ]
             },
             {
               "name": "eval",
